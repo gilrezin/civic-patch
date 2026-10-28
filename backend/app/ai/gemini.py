@@ -11,7 +11,16 @@ from PIL import Image
 
 from ..config import get_settings
 from ..imaging.store import png_bytes
-from .base import EditorTimeout, NoImageReturned, OutOfScope, RateLimited, SafetyRefusal, fit_to
+from .base import (
+    AuthError,
+    BillingError,
+    EditorTimeout,
+    NoImageReturned,
+    OutOfScope,
+    RateLimited,
+    SafetyRefusal,
+    fit_to,
+)
 from .prompts import NUDGE
 
 log = logging.getLogger(__name__)
@@ -19,18 +28,30 @@ log = logging.getLogger(__name__)
 _GEMINI_SEM = asyncio.Semaphore(2)
 
 
+def _google_message(exc: Exception) -> str | None:
+    """Pull the human-readable message out of a google-genai APIError, if present."""
+    details = getattr(exc, "details", None)
+    if isinstance(details, dict):
+        err = details.get("error", details)
+        if isinstance(err, dict) and isinstance(err.get("message"), str):
+            return err["message"].strip()
+    msg = getattr(exc, "message", None)
+    return msg.strip() if isinstance(msg, str) and msg else None
+
+
 class GeminiEditor:
-    def __init__(self) -> None:
+    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
         from google import genai
         from google.genai import types
 
         settings = get_settings()
-        if not settings.gemini_api_key:
+        api_key = api_key or settings.gemini_api_key
+        if not api_key:
             raise RuntimeError("GEMINI_API_KEY is not set (see backend/example.env)")
         self._types = types
-        self._model = settings.gemini_image_model
+        self._model = model or settings.gemini_image_model
         self._client = genai.Client(
-            api_key=settings.gemini_api_key,
+            api_key=api_key,
             http_options=types.HttpOptions(timeout=120_000),
         )
 
@@ -77,8 +98,14 @@ class GeminiEditor:
             except Exception as exc:  # SDK APIError and friends
                 code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
                 msg = str(exc)
+                log.warning("Gemini error (attempt %d): %s", attempt + 1, msg[:500])
+                lowered = msg.lower()
+                if code == 402 or "prepayment" in lowered or "billing" in lowered or "quota" in lowered:
+                    raise BillingError(_google_message(exc) or msg[:300]) from exc
+                if code in (401, 403) or "api key not valid" in lowered or "permission_denied" in lowered:
+                    raise AuthError(_google_message(exc) or msg[:300]) from exc
                 if code in (429, 503) or "RESOURCE_EXHAUSTED" in msg or "UNAVAILABLE" in msg:
-                    last_err = RateLimited(msg[:200])
+                    last_err = RateLimited(_google_message(exc) or msg[:200])
                     await asyncio.sleep(2.0 * (2**attempt))
                     continue
                 if "timeout" in msg.lower() or "deadline" in msg.lower():

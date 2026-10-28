@@ -34,6 +34,9 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # JSON file mapping prompt keywords to extra Gemini instructions (see backend/prompt_hints.json)
+    prompt_hints_file: Path = BACKEND_DIR / "prompt_hints.json"
+
     # Crop sizing
     min_zoom: int = 14
     max_zoom: int = 19
@@ -58,6 +61,11 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.resolved_data_dir / "civic_patch.sqlite3"
+
+    @property
+    def resolved_prompt_hints_file(self) -> Path:
+        p = self.prompt_hints_file
+        return p if p.is_absolute() else BACKEND_DIR / p
 
 
 @lru_cache

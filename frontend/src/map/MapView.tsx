@@ -18,6 +18,7 @@ export function MapView() {
 
   const editsVersion = useStore((s) => s.editsVersion);
   const overlaysVisible = useStore((s) => s.overlaysVisible);
+  const pinsVisible = useStore((s) => s.pinsVisible);
   const viewOriginalId = useStore((s) => s.viewOriginalId);
   const preview = useStore((s) => s.previewVersionUrl);
   const selectedId = useStore((s) => s.selectedId);
@@ -66,8 +67,8 @@ export function MapView() {
     const edits = Array.from(st.edits.values());
     const temps = Array.from(st.tempEdits.values());
     syncOverlays(map, edits, temps, { visible: overlaysVisible, viewOriginalId, preview, selectedId, hoveredId });
-    syncPins(map, edits, temps, (id) => useStore.getState().select(id), overlaysVisible);
-  }, [map, editsVersion, overlaysVisible, viewOriginalId, preview, selectedId, hoveredId]);
+    syncPins(map, edits, temps, (id) => useStore.getState().select(id), pinsVisible);
+  }, [map, editsVersion, overlaysVisible, pinsVisible, viewOriginalId, preview, selectedId, hoveredId]);
 
   // Fit the map to a selected edit, leaving room for the side panel.
   useEffect(() => {

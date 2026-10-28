@@ -59,6 +59,7 @@ class Edit(Base):
     mask_path: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
     error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    place_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -86,7 +87,9 @@ class EditVersion(Base):
     edit_id: Mapped[int] = mapped_column(ForeignKey("edits.id", ondelete="CASCADE"), nullable=False, index=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     prompt: Mapped[str] = mapped_column(String(300), nullable=False)
-    parent_version_id: Mapped[int | None] = mapped_column(ForeignKey("edit_versions.id"), nullable=True)
+    parent_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("edit_versions.id", ondelete="SET NULL"), nullable=True
+    )
     full_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     overlay_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
@@ -105,6 +108,16 @@ class Vote(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     edit_id: Mapped[int] = mapped_column(ForeignKey("edits.id", ondelete="CASCADE"), primary_key=True)
     value: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class Bookmark(Base):
+    """Private per-user saved posts."""
+
+    __tablename__ = "bookmarks"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    edit_id: Mapped[int] = mapped_column(ForeignKey("edits.id", ondelete="CASCADE"), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 

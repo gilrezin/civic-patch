@@ -22,7 +22,7 @@ REGION_HINT_TEXT = (
 CREATE_TEMPLATE = (
     SYSTEM_PREFIX
     + """
-{region_hint}
+{region_hint}{guidance}
 Instruction from a resident: "{prompt}"
 Return the edited image."""
 )
@@ -30,7 +30,7 @@ Return the edited image."""
 REFINE_TEMPLATE = (
     SYSTEM_PREFIX
     + """
-{region_hint}
+{region_hint}{guidance}
 The attached photo has already been edited. Changes applied so far, in order:
 {history}
 Apply this further change, keeping the previous changes: "{prompt}"
@@ -44,11 +44,21 @@ def region_hint(mode: str) -> str:
     return REGION_HINT_MASK if mode == "mask" else REGION_HINT_TEXT
 
 
-def create_prompt(prompt: str, mode: str) -> str:
-    return CREATE_TEMPLATE.format(region_hint=region_hint(mode), prompt=prompt)
+def format_guidance(hints: list[str] | None) -> str:
+    """Extra design guidance (from prompt_hints.json) as a numbered block, or empty."""
+    if not hints:
+        return ""
+    lines = "\n".join(f"{i + 1}. {h}" for i, h in enumerate(hints))
+    return f"\nDesign guidance from the planning team for this request:\n{lines}"
 
 
-def refine_prompt(prompt: str, history: list[str], mode: str) -> str:
+def create_prompt(prompt: str, mode: str, hints: list[str] | None = None) -> str:
+    return CREATE_TEMPLATE.format(region_hint=region_hint(mode), guidance=format_guidance(hints), prompt=prompt)
+
+
+def refine_prompt(prompt: str, history: list[str], mode: str, hints: list[str] | None = None) -> str:
     recent = history[-5:]
     lines = "\n".join(f"{i + 1}. {h}" for i, h in enumerate(recent)) or "(none)"
-    return REFINE_TEMPLATE.format(region_hint=region_hint(mode), history=lines, prompt=prompt)
+    return REFINE_TEMPLATE.format(
+        region_hint=region_hint(mode), guidance=format_guidance(hints), history=lines, prompt=prompt
+    )

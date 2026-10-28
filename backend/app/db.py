@@ -34,6 +34,24 @@ engine = _make_engine(f"sqlite:///{settings.db_path.as_posix()}")
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
+# Additive migrations for columns introduced after a database was first created.
+# (SQLAlchemy's create_all never alters existing tables.)
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "edits": {"place_name": "VARCHAR(160)"},
+}
+
+
+def run_migrations() -> None:
+    with engine.begin() as conn:
+        for table, cols in _ADDED_COLUMNS.items():
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if not existing:
+                continue  # table does not exist yet; create_all will build it with all columns
+            for name, ddl in cols.items():
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
+
 def get_db() -> Iterator[Session]:
     db = SessionLocal()
     try:

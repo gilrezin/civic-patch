@@ -37,6 +37,18 @@ class RateLimited(EditorError):
     http_status = 503
 
 
+class BillingError(EditorError):
+    """The Gemini project has no quota/credits or the key is not authorized."""
+
+    code = "billing"
+    http_status = 402
+
+
+class AuthError(EditorError):
+    code = "bad_api_key"
+    http_status = 502
+
+
 class EditorTimeout(EditorError):
     code = "timeout"
     http_status = 504

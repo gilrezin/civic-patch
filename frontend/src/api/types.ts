@@ -38,6 +38,23 @@ export interface EditOut {
   my_vote: -1 | 0 | 1;
   comment_count: number;
   original_url: string;
+  place_name: string | null;
+  saved: boolean;
+}
+
+export interface ContributionOut {
+  version_id: number;
+  edit_id: number;
+  kind: "edit" | "refinement";
+  prompt: string;
+  version_number: number;
+  created_at: string;
+  place_name: string | null;
+  centroid: [number, number];
+  edit_original_prompt: string;
+  edit_creator: UserOut;
+  edit_status: string;
+  score: number;
 }
 
 export interface CommentOut {

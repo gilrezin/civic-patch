@@ -1,11 +1,13 @@
 import { useStore } from "../state/store";
-import { IconEye, IconEyeOff, IconHand, IconLocate, IconPolygon } from "./icons";
+import { IconHand, IconLayers, IconLayersOff, IconLocate, IconMapPin, IconMapPinOff, IconPolygon } from "./icons";
 
 export function Toolbar() {
   const tool = useStore((s) => s.tool);
   const setTool = useStore((s) => s.setTool);
   const overlaysVisible = useStore((s) => s.overlaysVisible);
   const toggleOverlays = useStore((s) => s.toggleOverlays);
+  const pinsVisible = useStore((s) => s.pinsVisible);
+  const togglePins = useStore((s) => s.togglePins);
   const requestLocate = useStore((s) => s.requestLocate);
   const draw = useStore((s) => s.draw);
 
@@ -31,10 +33,20 @@ export function Toolbar() {
       <button
         type="button"
         className={`tool ${overlaysVisible ? "" : "is-off"}`}
-        title={overlaysVisible ? "Hide all suggestions" : "Show all suggestions"}
+        title={overlaysVisible ? "Hide edits" : "Show edits"}
+        aria-pressed={!overlaysVisible}
         onClick={toggleOverlays}
       >
-        {overlaysVisible ? <IconEye /> : <IconEyeOff />}
+        {overlaysVisible ? <IconLayers /> : <IconLayersOff />}
+      </button>
+      <button
+        type="button"
+        className={`tool ${pinsVisible ? "" : "is-off"}`}
+        title={pinsVisible ? "Hide pins" : "Show pins"}
+        aria-pressed={!pinsVisible}
+        onClick={togglePins}
+      >
+        {pinsVisible ? <IconMapPin /> : <IconMapPinOff />}
       </button>
       <button type="button" className="tool" title="Go to my location" onClick={requestLocate}>
         <IconLocate />

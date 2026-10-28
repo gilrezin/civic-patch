@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { AuthModal } from "./components/AuthModal";
 import { EditPanel } from "./components/EditPanel";
 import { Header } from "./components/Header";
+import { ListDrawer } from "./components/ListDrawer";
 import { Toasts } from "./components/Toast";
 import { usePolling } from "./hooks/usePolling";
 import { MapView } from "./map/MapView";
@@ -10,6 +11,7 @@ import { useStore } from "./state/store";
 export default function App() {
   const restoreSession = useStore((s) => s.restoreSession);
   const editsVersion = useStore((s) => s.editsVersion);
+  const drawer = useStore((s) => s.drawer);
 
   useEffect(() => {
     void restoreSession();
@@ -33,7 +35,7 @@ export default function App() {
       <Header />
       <main className="main">
         <MapView />
-        <EditPanel />
+        {drawer ? <ListDrawer /> : <EditPanel />}
       </main>
       <AuthModal />
       <Toasts />

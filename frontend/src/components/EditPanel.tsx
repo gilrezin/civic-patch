@@ -1,9 +1,21 @@
 import { useEffect, useState } from "react";
+import { ApiError, api } from "../api/client";
 import { submitRefinement } from "../map/submit";
 import { useStore } from "../state/store";
 import { timeAgo } from "../utils/time";
 import { Comments } from "./Comments";
-import { IconArrowRight, IconBookmark, IconClock, IconClose, IconComment, IconEdit, IconShare } from "./icons";
+import {
+  IconArrowRight,
+  IconBookmark,
+  IconBookmarkFilled,
+  IconClock,
+  IconClose,
+  IconComment,
+  IconEdit,
+  IconMapPin,
+  IconShare,
+  IconTrash,
+} from "./icons";
 import { VersionHistory } from "./VersionHistory";
 import { VoteButtons } from "./VoteButtons";
 
@@ -20,12 +32,16 @@ export function EditPanel() {
   const [refineText, setRefineText] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setRefining(false);
     setRefineText("");
     setShowHistory(false);
     setShowComments(false);
+    setConfirmDelete(false);
+    setDeleting(false);
   }, [selectedId]);
 
   if (selectedId === null || !edit) return null;
@@ -35,6 +51,39 @@ export function EditPanel() {
   const others = Math.max(0, edit.version_count - 1);
   const latest = edit.current_version;
   const title = edit.original_prompt || latest?.prompt || "Generating…";
+  const isOwner = !!user && user.id === edit.created_by.id;
+
+  const toggleSaved = async () => {
+    const st = useStore.getState();
+    if (!user) {
+      st.openAuthModal(true);
+      return;
+    }
+    const next = !edit.saved;
+    st.upsertEdit({ ...edit, saved: next });
+    try {
+      const r = await api.bookmark(edit.id, next);
+      const cur = useStore.getState().edits.get(edit.id);
+      if (cur) useStore.getState().upsertEdit({ ...cur, saved: r.saved });
+      useStore.getState().pushToast("success", r.saved ? "Saved. Find it under Saved in the header." : "Removed from Saved.");
+    } catch (err) {
+      useStore.getState().upsertEdit(edit);
+      useStore.getState().pushToast("error", err instanceof ApiError ? err.message : "Could not update your bookmark.");
+    }
+  };
+
+  const doDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.deleteEdit(edit.id);
+      useStore.getState().removeEdit(edit.id);
+      useStore.getState().pushToast("success", "Your suggestion was deleted.");
+    } catch (err) {
+      setDeleting(false);
+      setConfirmDelete(false);
+      useStore.getState().pushToast("error", err instanceof ApiError ? err.message : "Could not delete that suggestion.");
+    }
+  };
 
   const onRefine = async () => {
     const prompt = refineText.trim();
@@ -76,6 +125,11 @@ export function EditPanel() {
           <h2 className="panel-title">{title}</h2>
           {latest && latest.version_number > 1 && (
             <div className="panel-sub muted">Latest refinement: {latest.prompt}</div>
+          )}
+          {edit.place_name && (
+            <div className="panel-place muted">
+              <IconMapPin width={15} height={15} /> {edit.place_name}
+            </div>
           )}
           <div className="panel-chips">
             <button type="button" className="chip chip-link" onClick={() => setShowHistory((v) => !v)}>
@@ -154,10 +208,46 @@ export function EditPanel() {
           <IconShare /> Share
         </button>
         <span className="spacer" />
-        <span className="muted" title="Bookmarks coming soon">
-          <IconBookmark />
-        </span>
+        {isOwner && (
+          <button
+            type="button"
+            className="icon-btn icon-btn-danger"
+            onClick={() => setConfirmDelete(true)}
+            disabled={busy || deleting}
+            aria-label="Delete this suggestion"
+            title="Delete this suggestion"
+          >
+            <IconTrash />
+          </button>
+        )}
+        <button
+          type="button"
+          className={`icon-btn ${edit.saved ? "is-saved" : ""}`}
+          onClick={() => void toggleSaved()}
+          aria-pressed={edit.saved}
+          aria-label={edit.saved ? "Remove from Saved" : "Save this post"}
+          title={edit.saved ? "Remove from Saved" : "Save this post"}
+        >
+          {edit.saved ? <IconBookmarkFilled /> : <IconBookmark />}
+        </button>
       </div>
+
+      {confirmDelete && (
+        <div className="confirm" role="alertdialog" aria-label="Confirm deletion">
+          <div className="confirm-text">
+            <strong>Are you sure?</strong> This removes your suggestion
+            {others > 0 ? ` and its ${others} refinement${others === 1 ? "" : "s"}` : ""} from the map for everyone.
+          </div>
+          <div className="confirm-row">
+            <button type="button" className="btn btn-ghost" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-danger" onClick={() => void doDelete()} disabled={deleting}>
+              {deleting ? "Deleting…" : "Yes, delete"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showComments && (
         <div className="panel-section">

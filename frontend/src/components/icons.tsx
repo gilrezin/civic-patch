@@ -111,6 +111,54 @@ export const IconBookmark = (p: P) => (
   </svg>
 );
 
+export const IconBookmarkFilled = (p: P) => (
+  <svg {...base} fill="currentColor" {...p}>
+    <path d="M6 3h12v18l-6-4-6 4z" />
+  </svg>
+);
+
+export const IconTrash = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 7h16M10 11v6M14 11v6" />
+    <path d="M6 7l1 13h10l1-13" />
+    <path d="M9 7V4h6v3" />
+  </svg>
+);
+
+export const IconMapPin = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 22s7-7.1 7-12.5a7 7 0 0 0-14 0C5 14.9 12 22 12 22z" />
+    <circle cx="12" cy="9.5" r="2.5" />
+  </svg>
+);
+
+export const IconMapPinOff = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M9.3 4.6A7 7 0 0 1 19 9.5c0 2-1 4.2-2.4 6.2" />
+    <path d="M6.2 6.2A7 7 0 0 0 5 9.5C5 14.9 12 22 12 22s1.9-1.9 3.8-4.6" />
+    <path d="M10.2 10.2a2.5 2.5 0 0 0 3.6 3.6" />
+    <path d="M2 2l20 20" />
+  </svg>
+);
+
+export const IconLayersOff = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M8.6 5.9L12 4l9 5-3.4 1.9" />
+    <path d="M5.4 7.7L3 9l9 5 2.6-1.4" />
+    <path d="M3 13l9 5 3.9-2.2" />
+    <path d="M3 17l9 5 9-5" />
+    <path d="M2 2l20 20" />
+  </svg>
+);
+
+export const IconLayers = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 3l9 5-9 5-9-5 9-5z" />
+    <path d="M3 13l9 5 9-5" />
+    <path d="M3 17l9 5 9-5" />
+  </svg>
+);
+
 export const IconClose = (p: P) => (
   <svg {...base} {...p}>
     <path d="M6 6l12 12M18 6L6 18" />

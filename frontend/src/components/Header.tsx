@@ -1,4 +1,5 @@
 import { useStore } from "../state/store";
+import { IconBookmark, IconLayers } from "./icons";
 
 export function Header() {
   const user = useStore((s) => s.user);
@@ -6,6 +7,8 @@ export function Header() {
   const setAuth = useStore((s) => s.setAuth);
   const setTool = useStore((s) => s.setTool);
   const tool = useStore((s) => s.tool);
+  const drawer = useStore((s) => s.drawer);
+  const setDrawer = useStore((s) => s.setDrawer);
 
   return (
     <header className="header">
@@ -33,12 +36,30 @@ export function Header() {
           {tool === "draw" ? "Cancel drawing" : "Suggest an improvement"}
         </button>
         {user ? (
-          <div className="header-user">
-            <span className="header-user-name">@{user.display_name}</span>
-            <button type="button" className="btn btn-ghost" onClick={() => setAuth(null)}>
-              Sign out
+          <>
+            <button
+              type="button"
+              className={`btn btn-ghost ${drawer === "mine" ? "is-active" : ""}`}
+              onClick={() => setDrawer(drawer === "mine" ? null : "mine")}
+              title="Everything you have suggested or refined"
+            >
+              <IconLayers width={18} height={18} /> My Edits
             </button>
-          </div>
+            <button
+              type="button"
+              className={`btn btn-ghost ${drawer === "saved" ? "is-active" : ""}`}
+              onClick={() => setDrawer(drawer === "saved" ? null : "saved")}
+              title="Posts you bookmarked (private)"
+            >
+              <IconBookmark width={18} height={18} /> Saved
+            </button>
+            <div className="header-user">
+              <span className="header-user-name">@{user.display_name}</span>
+              <button type="button" className="header-signout" onClick={() => setAuth(null)}>
+                Sign out
+              </button>
+            </div>
+          </>
         ) : (
           <button type="button" className="btn btn-ghost" onClick={() => openAuthModal(true)}>
             Sign in

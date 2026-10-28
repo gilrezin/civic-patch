@@ -12,15 +12,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..ai.base import EditorError
+from ..ai.hints import hints_for
 from ..ai.prompts import create_prompt, refine_prompt
 from ..ai.registry import get_editor
 from ..config import get_settings
 from ..geo.crop import build_crop
+from ..geo.places import reverse_geocode
 from ..geo.validate import ValidationError, check_polygon_size, clean_prompt, parse_polygon
 from ..imaging import store
 from ..imaging.mask import make_overlay, polygon_mask
-from ..models import Comment, Edit, EditVersion, User, Vote
-from ..schemas import EditOut, UserOut, VersionOut
+from ..models import Bookmark, Comment, Edit, EditVersion, User, Vote
+from ..schemas import ContributionOut, EditOut, UserOut, VersionOut
 from .ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -46,8 +48,11 @@ def _editor_http(exc: EditorError) -> HTTPException:
         "no_image": "The image model did not return an image. Please try again.",
         "busy": "The image service is busy right now. Please try again in a moment.",
         "timeout": "The image model took too long. Please try again.",
+        "billing": f"Gemini refused the request because of billing/quota: {exc.message}",
+        "bad_api_key": f"Gemini rejected the API key: {exc.message}",
     }
     headers = {"Retry-After": "20"} if exc.code == "busy" else None
+    log.warning("editor error %s: %s", exc.code, exc.message)
     return http_error(exc.http_status, exc.code, messages.get(exc.code, exc.message), headers)
 
 
@@ -82,7 +87,7 @@ def current_version(edit: Edit) -> EditVersion | None:
 
 def _aggregates(db: Session, edit_ids: list[int], user: User | None):
     if not edit_ids:
-        return {}, {}, {}
+        return {}, {}, {}, set()
     vote_rows = db.execute(
         select(
             Vote.edit_id,
@@ -99,15 +104,22 @@ def _aggregates(db: Session, edit_ids: list[int], user: User | None):
     ).all()
     comments = {r[0]: int(r[1]) for r in comment_rows}
     my = {}
+    saved: set[int] = set()
     if user is not None:
         my_rows = db.execute(
             select(Vote.edit_id, Vote.value).where(Vote.edit_id.in_(edit_ids), Vote.user_id == user.id)
         ).all()
         my = {r[0]: int(r[1]) for r in my_rows}
-    return votes, comments, my
+        saved = {
+            r[0]
+            for r in db.execute(
+                select(Bookmark.edit_id).where(Bookmark.edit_id.in_(edit_ids), Bookmark.user_id == user.id)
+            ).all()
+        }
+    return votes, comments, my, saved
 
 
-def edit_out(edit: Edit, votes, comments, my) -> EditOut:
+def edit_out(edit: Edit, votes, comments, my, saved: set[int] | None = None) -> EditOut:
     score, up, down = votes.get(edit.id, (0, 0, 0))
     cv = current_version(edit)
     first = min(edit.versions, key=lambda v: v.version_number) if edit.versions else None
@@ -129,12 +141,31 @@ def edit_out(edit: Edit, votes, comments, my) -> EditOut:
         my_vote=my.get(edit.id, 0),
         comment_count=comments.get(edit.id, 0),
         original_url=_url(edit.original_path) or "",
+        place_name=edit.place_name,
+        saved=edit.id in (saved or set()),
     )
 
 
 def serialize_edits(db: Session, edits: list[Edit], user: User | None) -> list[EditOut]:
-    votes, comments, my = _aggregates(db, [e.id for e in edits], user)
-    return [edit_out(e, votes, comments, my) for e in edits]
+    votes, comments, my, saved = _aggregates(db, [e.id for e in edits], user)
+    return [edit_out(e, votes, comments, my, saved) for e in edits]
+
+
+def polygon_centroid(polygon_geojson: str) -> tuple[float, float]:
+    ring = json.loads(polygon_geojson)["coordinates"][0]
+    pts = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+    a = cx = cy = 0.0
+    for i in range(len(pts)):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % len(pts)]
+        cross = x0 * y1 - x1 * y0
+        a += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    if abs(a) < 1e-12:
+        return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+    a *= 0.5
+    return (cx / (6 * a), cy / (6 * a))
 
 
 def serialize_edit(db: Session, edit: Edit, user: User | None) -> EditOut:
@@ -160,6 +191,103 @@ def get_edit_or_404(db: Session, edit_id: int) -> Edit:
     if edit is None:
         raise http_error(404, "not_found", "That edit no longer exists.")
     return edit
+
+
+def list_contributions(db: Session, user: User) -> list[ContributionOut]:
+    """Everything this user generated: their own edits (v1) and refinements of any edit."""
+    versions = list(
+        db.execute(
+            select(EditVersion)
+            .where(EditVersion.created_by == user.id, EditVersion.status == "done")
+            .order_by(EditVersion.created_at.desc())
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+    edits = {v.edit_id: v.edit for v in versions}
+    votes, _, _, _ = _aggregates(db, list(edits), user)
+    out: list[ContributionOut] = []
+    for v in versions:
+        e = v.edit
+        if e is None or e.status == "failed":
+            continue
+        first = min(e.versions, key=lambda x: x.version_number) if e.versions else None
+        out.append(
+            ContributionOut(
+                version_id=v.id,
+                edit_id=e.id,
+                kind="edit" if v.version_number == 1 else "refinement",
+                prompt=v.prompt,
+                version_number=v.version_number,
+                created_at=v.created_at,
+                place_name=e.place_name,
+                centroid=polygon_centroid(e.polygon_geojson),
+                edit_original_prompt=first.prompt if first else "",
+                edit_creator=UserOut(id=e.creator.id, display_name=e.creator.display_name),
+                edit_status=e.status,
+                score=votes.get(e.id, (0, 0, 0))[0],
+            )
+        )
+    return out
+
+
+def list_saved(db: Session, user: User) -> list[EditOut]:
+    rows = db.execute(
+        select(Edit)
+        .join(Bookmark, Bookmark.edit_id == Edit.id)
+        .where(Bookmark.user_id == user.id, Edit.status != "failed")
+        .order_by(Bookmark.created_at.desc())
+    )
+    return serialize_edits(db, list(rows.unique().scalars().all()), user)
+
+
+def set_bookmark(db: Session, user: User, edit: Edit, saved: bool) -> bool:
+    existing = db.get(Bookmark, (user.id, edit.id))
+    if saved and existing is None:
+        db.add(Bookmark(user_id=user.id, edit_id=edit.id))
+    elif not saved and existing is not None:
+        db.delete(existing)
+    db.commit()
+    return saved
+
+
+async def delete_edit(db: Session, user: User, edit: Edit) -> None:
+    if edit.created_by != user.id:
+        raise http_error(403, "forbidden", "Only the person who created this suggestion can delete it.")
+    if any(v.status == "pending" for v in edit.versions):
+        raise http_error(409, "in_progress", "Wait for the current generation to finish before deleting.")
+    edit_id = edit.id
+    # Versions reference each other through parent_version_id; break the chain first so
+    # the cascade can delete them in any order.
+    for v in edit.versions:
+        v.parent_version_id = None
+    db.flush()
+    db.delete(edit)
+    db.commit()
+    await asyncio.to_thread(store.delete_edit_files_sync, edit_id)
+
+
+async def backfill_place_names(limit: int = 200) -> int:
+    """Geocode edits created before place names existed. Runs in the background at startup."""
+    from ..db import SessionLocal
+
+    done = 0
+    with SessionLocal() as db:
+        edits = list(
+            db.execute(select(Edit).where(Edit.place_name.is_(None), Edit.status != "failed").limit(limit))
+            .unique()
+            .scalars()
+            .all()
+        )
+        for e in edits:
+            lng, lat = polygon_centroid(e.polygon_geojson)
+            name = await reverse_geocode(lng, lat)
+            if name:
+                e.place_name = name
+                db.commit()
+                done += 1
+    return done
 
 
 # ---------------------------------------------------------------------------
@@ -188,13 +316,19 @@ async def create_edit(db: Session, user: User, polygon: dict, prompt: str) -> Ed
         raise _validation_http(exc)
     _check_rate(user)
 
+    closed = [[lng, lat] for lng, lat in ring]
+    polygon_json = json.dumps({"type": "Polygon", "coordinates": [closed]})
+    c_lng, c_lat = polygon_centroid(polygon_json)
     try:
-        crop = await build_crop(
-            ring,
-            min_zoom=settings.min_zoom,
-            max_zoom=settings.max_zoom,
-            target_min_px=settings.target_min_px,
-            margin=settings.context_margin,
+        crop, place_name = await asyncio.gather(
+            build_crop(
+                ring,
+                min_zoom=settings.min_zoom,
+                max_zoom=settings.max_zoom,
+                target_min_px=settings.target_min_px,
+                margin=settings.context_margin,
+            ),
+            reverse_geocode(c_lng, c_lat),
         )
     except Exception as exc:
         _limiter.refund(user.id)
@@ -203,9 +337,9 @@ async def create_edit(db: Session, user: User, polygon: dict, prompt: str) -> Ed
 
     rect = crop.rect
     w, s, e, n = rect.bounds
-    closed = [[lng, lat] for lng, lat in ring]
     edit = Edit(
-        polygon_geojson=json.dumps({"type": "Polygon", "coordinates": [closed]}),
+        polygon_geojson=polygon_json,
+        place_name=place_name,
         bounds_w=w,
         bounds_s=s,
         bounds_e=e,
@@ -239,7 +373,12 @@ async def create_edit(db: Session, user: User, polygon: dict, prompt: str) -> Ed
     await store.save_png(mask, edit.mask_path)
 
     try:
-        await _generate_version(db, edit, version, base=crop.image, mask=mask, prompt_text=create_prompt(prompt, settings.region_hint))
+        hints = hints_for(prompt)
+        if hints:
+            log.info("edit %d: %d prompt hint(s) matched", edit.id, len(hints))
+        await _generate_version(
+            db, edit, version, base=crop.image, mask=mask, prompt_text=create_prompt(prompt, settings.region_hint, hints)
+        )
     except EditorError as exc:
         _limiter.refund(user.id)
         db.delete(edit)
@@ -282,9 +421,15 @@ async def refine_edit(db: Session, user: User, edit: Edit, prompt: str) -> Edit:
     base = await store.load_image(base_version.full_path)
     mask = await store.load_image(edit.mask_path)
     history = [v.prompt for v in sorted(edit.versions, key=lambda v: v.version_number) if v.status == "done"]
+    hints = hints_for(prompt)
     try:
         await _generate_version(
-            db, edit, version, base=base, mask=mask, prompt_text=refine_prompt(prompt, history, settings.region_hint)
+            db,
+            edit,
+            version,
+            base=base,
+            mask=mask,
+            prompt_text=refine_prompt(prompt, history, settings.region_hint, hints),
         )
     except EditorError as exc:
         _limiter.refund(user.id)

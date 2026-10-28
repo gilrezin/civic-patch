@@ -26,7 +26,11 @@ def _fake_tile_bytes(z: int, x: int, y: int) -> bytes:
 
 
 @pytest.fixture(autouse=True)
-def stub_tiles(monkeypatch):
+def stub_tiles(request, monkeypatch):
+    """Serve synthetic tiles so unit tests need no network. Tests marked `live` get real tiles."""
+    if request.node.get_closest_marker("live"):
+        yield
+        return
     from app.geo import tiles
 
     async def fake_fetch_tiles(z, tx0, ty0, tx1, ty1):
@@ -36,6 +40,17 @@ def stub_tiles(monkeypatch):
     from app.geo import crop
 
     monkeypatch.setattr(crop, "fetch_tiles", fake_fetch_tiles)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def stub_geocode(monkeypatch):
+    from app.services import edits as svc
+
+    async def fake_reverse_geocode(lng, lat):
+        return "Center City, Philadelphia"
+
+    monkeypatch.setattr(svc, "reverse_geocode", fake_reverse_geocode)
     yield
 
 

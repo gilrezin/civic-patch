@@ -24,6 +24,6 @@ def vote(edit_id: int, body: VoteIn, db: Session = Depends(get_db), user: User =
     else:
         existing.value = body.value
     db.commit()
-    votes, _, my = svc._aggregates(db, [edit_id], user)
+    votes, _, my, _ = svc._aggregates(db, [edit_id], user)
     score, up, down = votes.get(edit_id, (0, 0, 0))
     return VoteOut(score=score, up=up, down=down, my_vote=my.get(edit_id, 0))

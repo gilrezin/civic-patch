@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, get_optional_user
 from ..db import get_db
 from ..models import User
-from ..schemas import EditCreateIn, EditOut, RefineIn, VersionOut
+from ..schemas import BookmarkIn, BookmarkOut, EditCreateIn, EditOut, RefineIn, VersionOut
 from ..services import edits as svc
 
 router = APIRouter(prefix="/edits", tags=["edits"])
@@ -55,3 +55,18 @@ async def refine_edit(
 def list_versions(edit_id: int, db: Session = Depends(get_db)) -> list[VersionOut]:
     edit = svc.get_edit_or_404(db, edit_id)
     return [svc.version_out(v) for v in sorted(edit.versions, key=lambda v: v.version_number)]
+
+
+@router.delete("/{edit_id}", status_code=204, response_class=Response)
+async def delete_edit(edit_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> Response:
+    edit = svc.get_edit_or_404(db, edit_id)
+    await svc.delete_edit(db, user, edit)
+    return Response(status_code=204)
+
+
+@router.put("/{edit_id}/bookmark", response_model=BookmarkOut)
+def bookmark(
+    edit_id: int, body: BookmarkIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> BookmarkOut:
+    edit = svc.get_edit_or_404(db, edit_id)
+    return BookmarkOut(saved=svc.set_bookmark(db, user, edit, body.saved))

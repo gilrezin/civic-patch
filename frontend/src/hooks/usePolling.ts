@@ -9,7 +9,9 @@ let lastFingerprint = "";
 export async function refreshEdits(force = false): Promise<void> {
   try {
     const list = await api.listEdits();
-    const fp = list.map((e) => `${e.id}:${e.updated_at}:${e.score}:${e.comment_count}:${e.my_vote}`).join("|");
+    const fp = list
+      .map((e) => `${e.id}:${e.updated_at}:${e.score}:${e.comment_count}:${e.my_vote}:${e.saved ? 1 : 0}:${e.place_name ?? ""}`)
+      .join("|");
     if (!force && fp === lastFingerprint) return;
     lastFingerprint = fp;
     useStore.getState().setEdits(list);

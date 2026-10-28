@@ -18,6 +18,10 @@ references/  proposal and UI mockups
 - Node.js 20 or newer (developed on 24)
 - A Gemini API key: https://aistudio.google.com/apikey
 
+## Quick start (Windows)
+
+After the one-time setup below (backend venv, `npm install`, `backend/.env`), double-click `dev.bat` or run it from a terminal. It starts both servers in their own windows, opens the site in your default browser, and keeps the launcher window open. Closing the launcher window (or pressing Enter or Ctrl+C in it) stops both servers. Pass `-NoBrowser` to skip opening the browser.
+
 ## Backend
 
 ```powershell
@@ -40,17 +44,30 @@ Environment variables (see `backend/example.env`):
 | `REGION_HINT` | `mask` | `mask` sends the polygon mask as a second image; `text` describes the region in words |
 | `JWT_SECRET` | insecure default | Secret for signing login tokens; set a long random string |
 | `DATA_DIR` | `./data` | Where the SQLite database and generated images live |
+| `PROMPT_HINTS_FILE` | `prompt_hints.json` | Keyword to extra-instruction mapping sent to Gemini (see below) |
 | `MAX_BBOX_KM2` / `MIN_POLY_M2` | `1.0` / `20` | Selection size guardrails |
+
+### Prompt hints
+
+`backend/prompt_hints.json` lets you steer Gemini without touching code. Each key is a keyword or phrase; when it appears in a resident's prompt (case-insensitive, whole word, simple plurals allowed, so `bus` matches "buses" and `bike lane` matches "bike lanes"), the value is appended to the model prompt as design guidance. Values may be a string or a list of strings; keys starting with `_` are ignored. The file is re-read whenever it changes, so edits take effect on the next generation without a restart. Example:
+
+```json
+{
+  "bus": "The bus lanes occupy the outermost lanes of the street unless otherwise specified.",
+  "tree": ["Plant street trees in a regular row along the kerb.", "Match shadow direction to the photo."]
+}
+```
 | `GENERATIONS_PER_10_MIN` | `5` | Per-user generation limit |
 
 Run the tests:
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m pytest -m "not live"   # unit + API tests: fake editor, stubbed tiles, no network
+.\.venv\Scripts\python.exe -m pytest -m live         # one real Gemini call on a Market Street segment
 ```
 
-The tests use the fake editor and stubbed tiles, so they need no network or API key.
+The live test stitches real Esri tiles for a stretch of Market Street in Philadelphia, asks Gemini to "add bus lanes", and asserts the returned image is the same size as the crop and that the road pixels inside the polygon actually changed. It skips itself when `backend/.env` has no `GEMINI_API_KEY`, costs one image generation per run, and writes its inputs and outputs to `backend/tests/output/` for inspection.
 
 Alignment check (stitches a real crop and writes an identity overlay you can inspect):
 
@@ -66,7 +83,9 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. The dev server proxies `/api` and `/images` to the backend on port 8000.
+Open http://localhost:5173. The dev server proxies `/api` and `/images` to the backend at `http://127.0.0.1:8000` (override with the `VITE_API_TARGET` environment variable, for example `http://127.0.0.1:8001`).
+
+If the site suddenly reports "Not Found" or "Method Not Allowed" for routes that exist, an old backend process is still answering on port 8000. On Windows, stopping `uvicorn --reload` by closing its window or killing the parent can leave the worker alive; find it with `netstat -ano | findstr :8000` and end that PID (or its process tree) before starting the backend again.
 
 For a production build: `npm run build` (output in `frontend/dist/`).
 
@@ -77,6 +96,11 @@ For a production build: `npm run build` (output in `frontend/dist/`).
 3. Type how the area should change and press Enter. Generation takes roughly 10 to 40 seconds; a dashed outline and spinner mark the area meanwhile.
 4. Hover any edited area to see its outline; click it or its pin to open the post: votes, the prompt, edit history, **Refine proposal**, **View original**, comments and a share link.
 5. Other users' edits, votes and comments appear automatically within about 15 seconds.
+6. **My Edits** (header) lists everything you generated: your own suggestions and refinements you made to other people's, each labelled with its neighbourhood and city. Click an entry to jump to it.
+7. The **bookmark** icon on a post saves it to your private **Saved** list in the header.
+8. The **trash** icon appears on your own suggestions. Deleting asks for confirmation, then removes the suggestion, its refinements, votes and comments from the map for everyone.
+
+Place names come from OpenStreetMap's Nominatim reverse geocoder (one request per edit, rate-limited to the service's one-per-second policy). Edits created before this feature are labelled in the background when the backend starts.
 
 ## How the imagery pipeline works
 
@@ -88,4 +112,4 @@ For a production build: `npm run build` (output in `frontend/dist/`).
 
 ## Attribution and terms
 
-Basemap imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community. This prototype uses Esri's public World Imagery tile service without an API key; production use requires an ArcGIS Location Platform account and must follow Esri's terms of use. Generated patches are AI-modified derivatives for visualization only.
+Basemap imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community. Place names © OpenStreetMap contributors via Nominatim. This prototype uses Esri's public World Imagery tile service without an API key; production use requires an ArcGIS Location Platform account and must follow Esri's terms of use. Generated patches are AI-modified derivatives for visualization only.

@@ -82,6 +82,56 @@ def test_create_refine_vote_comment(client):
     assert not any(x["id"] == edit["id"] for x in r.json())
 
 
+def test_contributions_bookmarks_and_delete(client):
+    owner_h, owner = _signup(client)
+    other_h, other = _signup(client)
+
+    edit = client.post("/api/edits", json={"polygon": POLY, "prompt": "turn this block into a plaza"}, headers=owner_h).json()
+    assert edit["place_name"] == "Center City, Philadelphia"
+    assert edit["saved"] is False
+
+    # The other user refines the owner's edit -> shows up as a refinement in THEIR contributions.
+    r = client.post(f"/api/edits/{edit['id']}/refine", json={"prompt": "add a fountain"}, headers=other_h)
+    assert r.status_code == 200, r.text
+
+    mine = client.get("/api/me/contributions", headers=owner_h).json()
+    assert [c["kind"] for c in mine if c["edit_id"] == edit["id"]] == ["edit"]
+    assert mine[0]["place_name"] == "Center City, Philadelphia"
+    assert -75.17 < mine[0]["centroid"][0] < -75.16
+
+    theirs = client.get("/api/me/contributions", headers=other_h).json()
+    ref = [c for c in theirs if c["edit_id"] == edit["id"]]
+    assert len(ref) == 1 and ref[0]["kind"] == "refinement"
+    assert ref[0]["prompt"] == "add a fountain"
+    assert ref[0]["edit_creator"]["id"] == owner["id"]
+    assert ref[0]["edit_original_prompt"] == "turn this block into a plaza"
+
+    # Bookmarks are private and per-user.
+    r = client.put(f"/api/edits/{edit['id']}/bookmark", json={"saved": True}, headers=other_h)
+    assert r.json() == {"saved": True}
+    assert [e["id"] for e in client.get("/api/me/saved", headers=other_h).json()] == [edit["id"]]
+    assert client.get("/api/me/saved", headers=owner_h).json() == []
+    assert client.get(f"/api/edits/{edit['id']}", headers=other_h).json()["saved"] is True
+    assert client.get(f"/api/edits/{edit['id']}", headers=owner_h).json()["saved"] is False
+    r = client.put(f"/api/edits/{edit['id']}/bookmark", json={"saved": False}, headers=other_h)
+    assert r.json() == {"saved": False}
+    assert client.get("/api/me/saved", headers=other_h).json() == []
+    assert client.put(f"/api/edits/{edit['id']}/bookmark", json={"saved": True}).status_code == 401
+
+    # Only the owner can delete; deletion removes the edit, its files and dependants.
+    from app.imaging import store as img_store
+
+    assert img_store.abs_path(f"{edit['id']}/v1_overlay.png").exists()
+    assert client.delete(f"/api/edits/{edit['id']}", headers=other_h).status_code == 403
+    assert client.delete(f"/api/edits/{edit['id']}").status_code == 401
+    assert client.delete(f"/api/edits/{edit['id']}", headers=owner_h).status_code == 204
+    assert client.get(f"/api/edits/{edit['id']}").status_code == 404
+    assert not any(e["id"] == edit["id"] for e in client.get("/api/edits").json())
+    assert not img_store.abs_path(f"{edit['id']}/v1_overlay.png").exists()
+    assert all(c["edit_id"] != edit["id"] for c in client.get("/api/me/contributions", headers=other_h).json())
+    assert other["id"] != owner["id"]
+
+
 def test_create_requires_auth_and_validates(client):
     r = client.post("/api/edits", json={"polygon": POLY, "prompt": "hello"})
     assert r.status_code == 401

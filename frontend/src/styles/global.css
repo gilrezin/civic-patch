@@ -108,13 +108,29 @@ button {
 
 .header-user {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  line-height: 1.15;
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
 }
 
 .header-user-name {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
+}
+
+.header-signout {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px 0;
+}
+
+.header-signout:hover {
+  color: var(--ink);
+  text-decoration: underline;
 }
 
 /* Buttons --------------------------------------------------------------- */
@@ -202,6 +218,71 @@ button {
 
 .btn-link.is-active {
   color: var(--accent);
+}
+
+.btn-ghost.is-active {
+  background: var(--card-2);
+  color: var(--ink);
+}
+
+.btn-danger {
+  background: var(--red);
+  color: var(--white);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--card-2);
+  color: var(--ink);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-btn.is-saved {
+  color: var(--teal);
+}
+
+.icon-btn-danger:hover:not(:disabled) {
+  color: var(--red);
+  background: #fee2e2;
+}
+
+.confirm {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.confirm-text {
+  font-size: 14px;
+  color: #7f1d1d;
+}
+
+.confirm-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* Toolbar --------------------------------------------------------------- */
@@ -452,6 +533,116 @@ button {
 .panel-sub {
   font-size: 14px;
   margin-bottom: 4px;
+}
+
+.panel-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* Drawer lists (My Edits / Saved) ---------------------------------------- */
+
+.drawer-title {
+  margin: 0 28px 4px 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.drawer-sub {
+  margin: 0 0 14px;
+}
+
+.drawer-empty {
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--card-2);
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.drawer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawer-item {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawer-item:hover {
+  border-color: var(--teal-2);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+}
+
+.drawer-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-item-title {
+  font-weight: 700;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.drawer-item-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.drawer-place,
+.drawer-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.drawer-saved-icon {
+  color: var(--teal);
+  display: inline-flex;
+}
+
+.kind {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+
+.kind-edit {
+  background: #fff1e6;
+  color: #c2410c;
+}
+
+.kind-refinement {
+  background: #e8f4f8;
+  color: var(--teal);
 }
 
 .panel-chips {

@@ -1,0 +1,23 @@
+{
+  "_comment": "Extra instructions sent to Gemini when a keyword appears in the resident's prompt. Keys are matched case-insensitively as whole words or phrases (plurals like 'buses' and 'bike lanes' match too). Values may be a string or a list of strings. Keys starting with '_' are ignored. Edit freely; the file is re-read automatically when it changes.",
+
+  "bus": "The bus lanes occupy the outermost lanes of the street unless otherwise specified. Paint them a distinct colour (red or terracotta) with 'BUS ONLY' markings and keep the remaining general-traffic lanes.",
+  "bus lane": "Bus lanes run the full visible length of the street, continuous through intersections, and keep their width consistent with the existing lanes.",
+
+  "bike lane": "Bike lanes are placed between the sidewalk and parked cars or the kerb, are narrower than a traffic lane, painted green, and separated from traffic by a buffer or bollards.",
+  "bike": "Keep cycling infrastructure continuous and connected to the existing street grid.",
+
+  "crosswalk": "Crosswalks are high-visibility zebra stripes spanning the full roadway at the intersection corners.",
+
+  "tree": "Street trees are planted in a regular row along the kerb line at even spacing, with realistic canopies and shadows consistent with the sun angle in the photo.",
+  "park": "New parkland uses realistic grass texture, groups of trees with cast shadows, and light-coloured walking paths; keep surrounding streets and buildings unchanged.",
+
+  "housing": "New housing matches the scale, roof style and orientation of neighbouring buildings and includes realistic roof detail and shadows; avoid towers unless asked.",
+  "apartment": "Multi-family buildings should be mid-rise with courtyards or setbacks, matching the street wall of the block.",
+
+  "parking": "When parking is removed, replace it with a coherent use (building, plaza or landscaping) that aligns to the street edge; do not leave bare rectangles.",
+
+  "plaza": "Plazas are paved with light stone or brick patterns, include benches, trees in planters and people at a plausible density for a top-down view.",
+
+  "protected intersection": "Protected intersections use corner refuge islands, set-back bike crossings and tightened turning radii."
+}

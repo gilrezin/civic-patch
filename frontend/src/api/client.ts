@@ -1,5 +1,14 @@
 import type { Polygon } from "geojson";
-import type { ApiErrorBody, AuthOut, CommentOut, EditOut, UserOut, VersionOut, VoteOut } from "./types";
+import type {
+  ApiErrorBody,
+  AuthOut,
+  CommentOut,
+  ContributionOut,
+  EditOut,
+  UserOut,
+  VersionOut,
+  VoteOut,
+} from "./types";
 
 export class ApiError extends Error {
   code: string;
@@ -74,6 +83,11 @@ export const api = {
   refineEdit: (id: number, prompt: string) =>
     request<EditOut>("POST", `/edits/${id}/refine`, { prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
   listVersions: (id: number) => request<VersionOut[]>("GET", `/edits/${id}/versions`),
+
+  deleteEdit: (id: number) => request<void>("DELETE", `/edits/${id}`),
+  bookmark: (id: number, saved: boolean) => request<{ saved: boolean }>("PUT", `/edits/${id}/bookmark`, { saved }),
+  contributions: () => request<ContributionOut[]>("GET", "/me/contributions"),
+  saved: () => request<EditOut[]>("GET", "/me/saved"),
 
   vote: (id: number, value: -1 | 0 | 1) => request<VoteOut>("PUT", `/edits/${id}/vote`, { value }),
   listComments: (id: number) => request<CommentOut[]>("GET", `/edits/${id}/comments`),

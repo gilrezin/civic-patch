@@ -5,6 +5,7 @@ import type { EditOut, UserOut } from "../api/types";
 import type { LngLat } from "../geo/polygon";
 
 export type Tool = "pan" | "draw";
+export type Drawer = "mine" | "saved" | null;
 
 export type DrawState =
   | { mode: "idle" }
@@ -41,10 +42,12 @@ interface State {
   viewOriginalId: number | null;
   previewVersionUrl: { editId: number; url: string } | null;
   overlaysVisible: boolean;
+  pinsVisible: boolean;
   tool: Tool;
   draw: DrawState;
   locateRequest: number;
   fitRequest: { editId: number; nonce: number } | null;
+  drawer: Drawer;
 
   toasts: Toast[];
 
@@ -56,6 +59,7 @@ interface State {
   // edits
   setEdits: (list: EditOut[]) => void;
   upsertEdit: (edit: EditOut) => void;
+  removeEdit: (id: number) => void;
   addTempEdit: (t: TempEdit) => void;
   removeTempEdit: (id: number) => void;
   markInFlight: (id: number, on: boolean) => void;
@@ -66,9 +70,11 @@ interface State {
   setViewOriginal: (id: number | null) => void;
   setPreviewVersion: (p: { editId: number; url: string } | null) => void;
   toggleOverlays: () => void;
+  togglePins: () => void;
   setTool: (tool: Tool) => void;
   setDraw: (draw: DrawState) => void;
   requestLocate: () => void;
+  setDrawer: (drawer: Drawer) => void;
 
   pushToast: (kind: Toast["kind"], message: string) => void;
   dismissToast: (id: number) => void;
@@ -91,10 +97,12 @@ export const useStore = create<State>((set, get) => ({
   viewOriginalId: null,
   previewVersionUrl: null,
   overlaysVisible: true,
+  pinsVisible: true,
   tool: "pan",
   draw: { mode: "idle" },
   locateRequest: 0,
   fitRequest: null,
+  drawer: null,
 
   toasts: [],
 
@@ -106,7 +114,7 @@ export const useStore = create<State>((set, get) => ({
     } else {
       localStorage.removeItem(TOKEN_KEY);
       setAuthToken(null);
-      set({ token: null, user: null });
+      set({ token: null, user: null, drawer: null });
     }
   },
   openAuthModal: (open) => set({ authModalOpen: open }),
@@ -137,6 +145,18 @@ export const useStore = create<State>((set, get) => ({
     next.set(edit.id, edit);
     set({ edits: next, editsVersion: get().editsVersion + 1 });
   },
+  removeEdit: (id) => {
+    const next = new Map(get().edits);
+    next.delete(id);
+    const patch: Partial<State> = { edits: next, editsVersion: get().editsVersion + 1 };
+    if (get().selectedId === id) {
+      patch.selectedId = null;
+      patch.viewOriginalId = null;
+      patch.previewVersionUrl = null;
+      patch.fitRequest = null;
+    }
+    set(patch);
+  },
   addTempEdit: (t) => {
     const next = new Map(get().tempEdits);
     next.set(t.id, t);
@@ -159,12 +179,15 @@ export const useStore = create<State>((set, get) => ({
       selectedId: id,
       viewOriginalId: null,
       previewVersionUrl: null,
+      drawer: null,
       fitRequest: id !== null && fit ? { editId: id, nonce: Date.now() } : null,
     }),
+  setDrawer: (drawer) => set({ drawer }),
   setHovered: (id) => set({ hoveredId: id }),
   setViewOriginal: (id) => set({ viewOriginalId: id }),
   setPreviewVersion: (p) => set({ previewVersionUrl: p }),
   toggleOverlays: () => set({ overlaysVisible: !get().overlaysVisible }),
+  togglePins: () => set({ pinsVisible: !get().pinsVisible }),
   setTool: (tool) => set({ tool }),
   setDraw: (draw) => set({ draw }),
   requestLocate: () => set({ locateRequest: get().locateRequest + 1 }),

@@ -60,6 +60,33 @@ class EditOut(BaseModel):
     my_vote: int
     comment_count: int
     original_url: str
+    place_name: str | None = None
+    saved: bool = False
+
+
+class ContributionOut(BaseModel):
+    """One thing the current user did on the map: an initial edit or a refinement."""
+
+    version_id: int
+    edit_id: int
+    kind: Literal["edit", "refinement"]
+    prompt: str
+    version_number: int
+    created_at: datetime
+    place_name: str | None
+    centroid: tuple[float, float]
+    edit_original_prompt: str
+    edit_creator: UserOut
+    edit_status: str
+    score: int
+
+
+class BookmarkIn(BaseModel):
+    saved: bool
+
+
+class BookmarkOut(BaseModel):
+    saved: bool
 
 
 class EditCreateIn(BaseModel):
