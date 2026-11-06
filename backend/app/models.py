@@ -15,12 +15,39 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from .db import Base
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class UTCDateTime(TypeDecorator):
+    """Store naive UTC in SQLite, always hand back timezone-aware UTC.
+
+    SQLite drops tzinfo, so without this the API would emit timestamps with no offset and
+    browsers would read them as local time (making every edit look like it was created in
+    the future, hence a permanent "just now").
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 class User(Base):
@@ -30,16 +57,25 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
 
 
 class Edit(Base):
     """One polygon region on the map. Its imagery is a chain of EditVersions."""
 
     __tablename__ = "edits"
-    __table_args__ = (CheckConstraint("status IN ('pending','done','failed')", name="ck_edit_status"),)
+    # sqlite_autoincrement: never reuse an id after a delete (ids are part of image URLs and
+    # map feature state).
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','done','failed')", name="ck_edit_status"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # "polygon": polygon_geojson is the drawn shape. "highlight": polygon_geojson is the bbox of
+    # the strokes stored in region_json, and the mask follows the strokes.
+    kind: Mapped[str] = mapped_column(String(16), default="polygon", nullable=False)
+    region_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     polygon_geojson: Mapped[str] = mapped_column(Text, nullable=False)
     bounds_w: Mapped[float] = mapped_column(Float, nullable=False)
     bounds_s: Mapped[float] = mapped_column(Float, nullable=False)
@@ -61,9 +97,9 @@ class Edit(Base):
     error: Mapped[str | None] = mapped_column(String(255), nullable=True)
     place_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+        UTCDateTime(), default=utcnow, onupdate=utcnow, nullable=False
     )
 
     creator: Mapped[User] = relationship("User", lazy="joined")
@@ -81,6 +117,7 @@ class EditVersion(Base):
     __table_args__ = (
         UniqueConstraint("edit_id", "version_number", name="uq_edit_version"),
         CheckConstraint("status IN ('pending','done','failed')", name="ck_version_status"),
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -95,7 +132,7 @@ class EditVersion(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
     error: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
 
     edit: Mapped[Edit] = relationship("Edit", back_populates="versions")
     creator: Mapped[User] = relationship("User", lazy="joined")
@@ -108,7 +145,7 @@ class Vote(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     edit_id: Mapped[int] = mapped_column(ForeignKey("edits.id", ondelete="CASCADE"), primary_key=True)
     value: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
 
 
 class Bookmark(Base):
@@ -118,7 +155,7 @@ class Bookmark(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     edit_id: Mapped[int] = mapped_column(ForeignKey("edits.id", ondelete="CASCADE"), primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
 
 
 class Comment(Base):
@@ -128,6 +165,6 @@ class Comment(Base):
     edit_id: Mapped[int] = mapped_column(ForeignKey("edits.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     body: Mapped[str] = mapped_column(String(1000), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
 
     author: Mapped[User] = relationship("User", lazy="joined")

@@ -37,7 +37,11 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 # Additive migrations for columns introduced after a database was first created.
 # (SQLAlchemy's create_all never alters existing tables.)
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "edits": {"place_name": "VARCHAR(160)"},
+    "edits": {
+        "place_name": "VARCHAR(160)",
+        "kind": "VARCHAR(16) NOT NULL DEFAULT 'polygon'",
+        "region_json": "TEXT",
+    },
 }
 
 

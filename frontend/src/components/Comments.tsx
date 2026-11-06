@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, api } from "../api/client";
 import type { CommentOut, EditOut } from "../api/types";
 import { useStore } from "../state/store";
-import { timeAgo } from "../utils/time";
+import { TimeAgo } from "./TimeAgo";
 
 export function Comments({ edit }: { edit: EditOut }) {
   const user = useStore((s) => s.user);
@@ -60,7 +60,8 @@ export function Comments({ edit }: { edit: EditOut }) {
             <li key={c.id} className="comment">
               <div className="comment-meta">
                 <span className="comment-author">@{c.author.display_name}</span>
-                <span className="muted">· {timeAgo(c.created_at)}</span>
+                <span className="muted" aria-hidden="true">·</span>
+                <TimeAgo iso={c.created_at} className="muted" />
               </div>
               <div className="comment-body">{c.body}</div>
             </li>

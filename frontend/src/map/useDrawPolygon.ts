@@ -1,19 +1,43 @@
 import { useEffect, useRef } from "react";
 import type { Feature, FeatureCollection } from "geojson";
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from "maplibre-gl";
-import { areaM2, bboxAreaM2, centroidOf, closeRing, type LngLat } from "../geo/polygon";
+import { areaM2, bboxAreaM2, centroidOf, closeRing, regionRing, type LngLat, type Region } from "../geo/polygon";
 import { useStore, type DrawState } from "../state/store";
 import { SOURCE } from "./layers";
+import { strokeFeatures } from "./overlays";
 
 const SNAP_PX = 12;
 const MAX_BBOX_KM2 = 1.0;
 const MIN_POLY_M2 = 20;
 
-function isTypingTarget(t: EventTarget | null): boolean {
+export function isTypingTarget(t: EventTarget | null): boolean {
   const el = t as HTMLElement | null;
   if (!el) return false;
   const tag = el.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+}
+
+/** Shared size guardrails; returns an error message or null. */
+export function regionSizeProblem(region: Region): string | null {
+  const ring = regionRing(region);
+  if (bboxAreaM2(ring) > MAX_BBOX_KM2 * 1_000_000) {
+    return `That area is too large. Please keep selections under ${MAX_BBOX_KM2} km².`;
+  }
+  if (areaM2(ring) < MIN_POLY_M2) return "That area is too small. Zoom in and select a larger area.";
+  return null;
+}
+
+/** Move to the prompt box for a finished region (polygon or highlight). */
+export function beginPrompt(map: MLMap, region: Region): boolean {
+  const st = useStore.getState();
+  const problem = regionSizeProblem(region);
+  if (problem) {
+    st.pushToast("error", problem);
+    return false;
+  }
+  st.setDraw({ mode: "prompting", region, anchor: centroidOf(regionRing(region)) });
+  map.getCanvas().style.cursor = "";
+  return true;
 }
 
 function previewFeatures(vertices: LngLat[], cursor: LngLat | null, snappable: boolean): FeatureCollection {
@@ -35,12 +59,15 @@ function previewFeatures(vertices: LngLat[], cursor: LngLat | null, snappable: b
   return { type: "FeatureCollection", features };
 }
 
-function finalFeatures(ring: LngLat[]): FeatureCollection {
+function regionFeatures(region: Region): FeatureCollection {
+  if (region.type === "highlight") {
+    return { type: "FeatureCollection", features: strokeFeatures(-1, "preview", region.strokes) };
+  }
   return {
     type: "FeatureCollection",
     features: [
-      { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [closeRing(ring)] } },
-      { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: closeRing(ring) } },
+      { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [closeRing(region.ring)] } },
+      { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: closeRing(region.ring) } },
     ],
   };
 }
@@ -51,7 +78,7 @@ export function useDrawPolygon(map: MLMap | null) {
   const drawRef = useRef<DrawState>(draw);
   drawRef.current = draw;
 
-  // Render the preview whenever draw state changes.
+  // Render the preview for every drawing mode whenever draw state changes.
   useEffect(() => {
     if (!map) return;
     const src = map.getSource(SOURCE.draw) as GeoJSONSource | undefined;
@@ -59,14 +86,17 @@ export function useDrawPolygon(map: MLMap | null) {
     if (draw.mode === "drawing") {
       const snappable = draw.vertices.length >= 3 && !!draw.cursor && nearFirst(map, draw.vertices, draw.cursor);
       src.setData(previewFeatures(draw.vertices, draw.cursor, snappable));
-    } else if (draw.mode === "prompting" || draw.mode === "submitting") {
-      src.setData(draw.mode === "prompting" ? finalFeatures(draw.ring) : { type: "FeatureCollection", features: [] });
+    } else if (draw.mode === "highlighting") {
+      const strokes = draw.current ? [...draw.strokes, draw.current] : draw.strokes;
+      src.setData({ type: "FeatureCollection", features: strokeFeatures(-1, "preview", strokes) });
+    } else if (draw.mode === "prompting") {
+      src.setData(regionFeatures(draw.region));
     } else {
       src.setData({ type: "FeatureCollection", features: [] });
     }
   }, [map, draw]);
 
-  // Enter/leave drawing mode when the tool changes.
+  // Enter/leave polygon drawing mode when the tool changes.
   useEffect(() => {
     if (!map) return;
     const st = useStore.getState();
@@ -76,13 +106,15 @@ export function useDrawPolygon(map: MLMap | null) {
         st.setTool("pan");
         return;
       }
-      if (st.draw.mode === "idle") st.setDraw({ mode: "drawing", vertices: [], cursor: null });
+      if (st.draw.mode === "idle" || st.draw.mode === "highlighting") {
+        st.setDraw({ mode: "drawing", vertices: [], cursor: null });
+      }
       map.doubleClickZoom.disable();
       map.getCanvas().style.cursor = "crosshair";
     } else {
       if (st.draw.mode === "drawing") st.setDraw({ mode: "idle" });
       map.doubleClickZoom.enable();
-      map.getCanvas().style.cursor = "";
+      if (tool === "pan") map.getCanvas().style.cursor = "";
     }
   }, [map, tool]);
 
@@ -91,17 +123,7 @@ export function useDrawPolygon(map: MLMap | null) {
 
     const closeRingAndPrompt = (vertices: LngLat[]) => {
       if (vertices.length < 3) return;
-      const st = useStore.getState();
-      if (bboxAreaM2(vertices) > MAX_BBOX_KM2 * 1_000_000) {
-        st.pushToast("error", `That area is too large. Please keep selections under ${MAX_BBOX_KM2} km².`);
-        return;
-      }
-      if (areaM2(vertices) < MIN_POLY_M2) {
-        st.pushToast("error", "That area is too small. Zoom in and draw a larger shape.");
-        return;
-      }
-      st.setDraw({ mode: "prompting", ring: vertices, anchor: centroidOf(vertices) });
-      map.getCanvas().style.cursor = "";
+      beginPrompt(map, { type: "polygon", ring: vertices });
     };
 
     const onClick = (e: MapMouseEvent) => {
@@ -143,7 +165,7 @@ export function useDrawPolygon(map: MLMap | null) {
         if (d.mode === "drawing" || d.mode === "prompting") {
           st.setDraw({ mode: "idle" });
           st.setTool("pan");
-        } else if (st.selectedId !== null) {
+        } else if (d.mode === "idle" && st.selectedId !== null) {
           st.select(null);
         }
         return;

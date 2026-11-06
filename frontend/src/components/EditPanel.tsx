@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { ApiError, api } from "../api/client";
 import { submitRefinement } from "../map/submit";
 import { useStore } from "../state/store";
-import { timeAgo } from "../utils/time";
 import { Comments } from "./Comments";
+import { TimeAgo } from "./TimeAgo";
 import {
   IconArrowRight,
   IconBookmark,
@@ -118,13 +118,17 @@ export function EditPanel() {
       <div className="panel-head">
         <div className="panel-main">
           <div className="panel-byline">
-            Suggestion by <span className="panel-author">@{edit.created_by.display_name}</span>
+            <span className="panel-byline-who">
+              Suggestion by <span className="panel-author">@{edit.created_by.display_name}</span>
+            </span>
             <span className="panel-dot">•</span>
-            <span className="muted">{timeAgo(edit.created_at)}</span>
+            <TimeAgo iso={edit.created_at} className="muted" />
           </div>
           <h2 className="panel-title">{title}</h2>
           {latest && latest.version_number > 1 && (
-            <div className="panel-sub muted">Latest refinement: {latest.prompt}</div>
+            <div className="panel-sub muted">
+              Latest refinement by @{latest.created_by.display_name} <TimeAgo iso={latest.created_at} />: {latest.prompt}
+            </div>
           )}
           {edit.place_name && (
             <div className="panel-place muted">

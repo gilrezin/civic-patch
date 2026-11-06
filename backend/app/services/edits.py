@@ -16,13 +16,20 @@ from ..ai.hints import hints_for
 from ..ai.prompts import create_prompt, refine_prompt
 from ..ai.registry import get_editor
 from ..config import get_settings
-from ..geo.crop import build_crop
+from ..geo.crop import build_crop, strokes_in_crop
 from ..geo.places import reverse_geocode
-from ..geo.validate import ValidationError, check_polygon_size, clean_prompt, parse_polygon
+from ..geo.validate import (
+    ValidationError,
+    check_polygon_size,
+    clean_prompt,
+    highlight_bbox_ring,
+    parse_highlight,
+    parse_polygon,
+)
 from ..imaging import store
-from ..imaging.mask import make_overlay, polygon_mask
+from ..imaging.mask import make_overlay, polygon_mask, strokes_mask
 from ..models import Bookmark, Comment, Edit, EditVersion, User, Vote
-from ..schemas import ContributionOut, EditOut, UserOut, VersionOut
+from ..schemas import ContributionOut, EditOut, HighlightIn, UserOut, VersionOut
 from .ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -123,8 +130,16 @@ def edit_out(edit: Edit, votes, comments, my, saved: set[int] | None = None) -> 
     score, up, down = votes.get(edit.id, (0, 0, 0))
     cv = current_version(edit)
     first = min(edit.versions, key=lambda v: v.version_number) if edit.versions else None
+    highlight = None
+    if edit.kind == "highlight" and edit.region_json:
+        try:
+            highlight = HighlightIn.model_validate(json.loads(edit.region_json))
+        except Exception:  # pragma: no cover - defensive against hand-edited rows
+            highlight = None
     return EditOut(
         id=edit.id,
+        kind="highlight" if edit.kind == "highlight" else "polygon",
+        highlight=highlight,
         polygon=json.loads(edit.polygon_geojson),
         bounds=edit.bounds,
         status=edit.status,
@@ -257,7 +272,7 @@ async def delete_edit(db: Session, user: User, edit: Edit) -> None:
         raise http_error(403, "forbidden", "Only the person who created this suggestion can delete it.")
     if any(v.status == "pending" for v in edit.versions):
         raise http_error(409, "in_progress", "Wait for the current generation to finish before deleting.")
-    edit_id = edit.id
+    asset_dir = store.asset_dir_of(edit.original_path)
     # Versions reference each other through parent_version_id; break the chain first so
     # the cascade can delete them in any order.
     for v in edit.versions:
@@ -265,7 +280,7 @@ async def delete_edit(db: Session, user: User, edit: Edit) -> None:
     db.flush()
     db.delete(edit)
     db.commit()
-    await asyncio.to_thread(store.delete_edit_files_sync, edit_id)
+    await asyncio.to_thread(store.delete_edit_files_sync, asset_dir)
 
 
 async def backfill_place_names(limit: int = 200) -> int:
@@ -306,11 +321,26 @@ def _check_rate(user: User) -> None:
         )
 
 
-async def create_edit(db: Session, user: User, polygon: dict, prompt: str) -> Edit:
+async def create_edit(
+    db: Session,
+    user: User,
+    prompt: str,
+    polygon: dict | None = None,
+    highlight: HighlightIn | None = None,
+) -> Edit:
     settings = get_settings()
+    strokes = None
     try:
         prompt = clean_prompt(prompt)
-        ring = parse_polygon(polygon)
+        if highlight is not None:
+            strokes = parse_highlight(highlight.model_dump())
+            ring = highlight_bbox_ring(strokes)
+            kind = "highlight"
+        elif polygon is not None:
+            ring = parse_polygon(polygon)
+            kind = "polygon"
+        else:
+            raise ValidationError("region_missing", "Draw a polygon or highlight an area first.")
         check_polygon_size(ring, settings.max_bbox_km2, settings.min_poly_m2)
     except ValidationError as exc:
         raise _validation_http(exc)
@@ -338,6 +368,12 @@ async def create_edit(db: Session, user: User, polygon: dict, prompt: str) -> Ed
     rect = crop.rect
     w, s, e, n = rect.bounds
     edit = Edit(
+        kind=kind,
+        region_json=(
+            json.dumps({"strokes": [{"coordinates": [list(c) for c in s.coords], "width_m": s.width_m} for s in strokes]})
+            if strokes is not None
+            else None
+        ),
         polygon_geojson=polygon_json,
         place_name=place_name,
         bounds_w=w,
@@ -361,14 +397,18 @@ async def create_edit(db: Session, user: User, polygon: dict, prompt: str) -> Ed
     )
     db.add(edit)
     db.flush()
-    edit.original_path = store.rel_path(edit.id, "original.png")
-    edit.mask_path = store.rel_path(edit.id, "mask.png")
+    asset_dir = store.new_asset_dir(edit.id)
+    edit.original_path = store.rel_path(asset_dir, "original.png")
+    edit.mask_path = store.rel_path(asset_dir, "mask.png")
     version = EditVersion(edit_id=edit.id, version_number=1, prompt=prompt, status="pending", created_by=user.id)
     db.add(version)
     db.commit()
     db.refresh(edit)
 
-    mask = await asyncio.to_thread(polygon_mask, crop.image.size, crop.polygon_px)
+    if strokes is not None:
+        mask = await asyncio.to_thread(strokes_mask, crop.image.size, strokes_in_crop(strokes, rect, crop.scale))
+    else:
+        mask = await asyncio.to_thread(polygon_mask, crop.image.size, crop.polygon_px)
     await store.save_png(crop.image, edit.original_path)
     await store.save_png(mask, edit.mask_path)
 
@@ -383,7 +423,7 @@ async def create_edit(db: Session, user: User, polygon: dict, prompt: str) -> Ed
         _limiter.refund(user.id)
         db.delete(edit)
         db.commit()
-        await asyncio.to_thread(store.delete_edit_files_sync, edit.id)
+        await asyncio.to_thread(store.delete_edit_files_sync, asset_dir)
         raise _editor_http(exc)
 
     edit.status = "done"
@@ -451,8 +491,9 @@ async def _generate_version(db: Session, edit: Edit, version: EditVersion, *, ba
     full = await editor.edit(base, hint_mask, prompt_text, edit.aspect_name)
     overlay = await asyncio.to_thread(make_overlay, full, mask)
     n = version.version_number
-    version.full_path = await store.save_png(full, store.rel_path(edit.id, f"v{n}_full.png"))
-    version.overlay_path = await store.save_png(overlay, store.rel_path(edit.id, f"v{n}_overlay.png"))
+    asset_dir = store.asset_dir_of(edit.original_path)
+    version.full_path = await store.save_png(full, store.rel_path(asset_dir, f"v{n}_full.png"))
+    version.overlay_path = await store.save_png(overlay, store.rel_path(asset_dir, f"v{n}_overlay.png"))
     version.status = "done"
     db.commit()
 

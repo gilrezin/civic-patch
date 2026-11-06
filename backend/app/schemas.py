@@ -42,8 +42,19 @@ class VersionOut(BaseModel):
     created_at: datetime
 
 
+class StrokeIn(BaseModel):
+    coordinates: list[list[float]] = Field(min_length=1, max_length=800)
+    width_m: float
+
+
+class HighlightIn(BaseModel):
+    strokes: list[StrokeIn] = Field(min_length=1, max_length=60)
+
+
 class EditOut(BaseModel):
     id: int
+    kind: Literal["polygon", "highlight"] = "polygon"
+    highlight: HighlightIn | None = None
     polygon: dict[str, Any]
     bounds: tuple[float, float, float, float]
     status: str
@@ -90,7 +101,10 @@ class BookmarkOut(BaseModel):
 
 
 class EditCreateIn(BaseModel):
-    polygon: dict[str, Any]
+    """Exactly one of `polygon` (GeoJSON Polygon) or `highlight` (strokes) must be given."""
+
+    polygon: dict[str, Any] | None = None
+    highlight: HighlightIn | None = None
     prompt: str = Field(max_length=2000)
 
 

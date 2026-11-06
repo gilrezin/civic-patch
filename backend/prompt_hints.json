@@ -4,6 +4,8 @@
   "bus": "The bus lanes occupy the outermost lanes of the street unless otherwise specified. Paint them a distinct colour (red or terracotta) with 'BUS ONLY' markings and keep the remaining general-traffic lanes.",
   "bus lane": "Bus lanes run the full visible length of the street, continuous through intersections, and keep their width consistent with the existing lanes.",
 
+  "lane": "Keep the number of lanes consistent with the existing street, and maintain their width and alignment with the existing lanes.",
+
   "bike lane": "Bike lanes are placed between the sidewalk and parked cars or the kerb, are narrower than a traffic lane, painted green, and separated from traffic by a buffer or bollards.",
   "bike": "Keep cycling infrastructure continuous and connected to the existing street grid.",
 

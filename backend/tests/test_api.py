@@ -38,6 +38,13 @@ def test_create_refine_vote_comment(client):
     assert edit["current_version"]["overlay_url"].startswith("/images/")
     assert edit["version_count"] == 1
     assert edit["created_by"]["display_name"] == user["display_name"]
+    # Timestamps must carry a UTC marker so browsers do not parse them as local time.
+    from datetime import datetime, timezone
+
+    for ts in (edit["created_at"], edit["updated_at"], edit["current_version"]["created_at"]):
+        assert ts.endswith("Z") or ts.endswith("+00:00"), ts
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        assert 0 <= age.total_seconds() < 120
     w, s, e, n = edit["bounds"]
     assert w < -75.1665 and e > -75.1640 and s < 39.9518 and n > 39.9535
 
@@ -121,15 +128,65 @@ def test_contributions_bookmarks_and_delete(client):
     # Only the owner can delete; deletion removes the edit, its files and dependants.
     from app.imaging import store as img_store
 
-    assert img_store.abs_path(f"{edit['id']}/v1_overlay.png").exists()
+    overlay_rel = edit["current_version"]["overlay_url"].removeprefix("/images/")
+    assert overlay_rel.startswith(f"{edit['id']}-")  # per-edit token in the folder name
+    assert img_store.abs_path(overlay_rel).exists()
     assert client.delete(f"/api/edits/{edit['id']}", headers=other_h).status_code == 403
     assert client.delete(f"/api/edits/{edit['id']}").status_code == 401
     assert client.delete(f"/api/edits/{edit['id']}", headers=owner_h).status_code == 204
     assert client.get(f"/api/edits/{edit['id']}").status_code == 404
     assert not any(e["id"] == edit["id"] for e in client.get("/api/edits").json())
-    assert not img_store.abs_path(f"{edit['id']}/v1_overlay.png").exists()
+    assert not img_store.abs_path(overlay_rel).exists()
+
+    # A new edit after a delete never reuses the deleted edit's id or image URL (ids are
+    # autoincrement and folders carry a random token), so cached images can't bleed over.
+    again = client.post("/api/edits", json={"polygon": POLY, "prompt": "turn this block into a plaza"}, headers=owner_h).json()
+    assert again["id"] != edit["id"]
+    assert again["current_version"]["overlay_url"] != edit["current_version"]["overlay_url"]
+    assert again["original_url"] != edit["original_url"]
     assert all(c["edit_id"] != edit["id"] for c in client.get("/api/me/contributions", headers=other_h).json())
     assert other["id"] != owner["id"]
+
+
+def test_highlight_edit_flow(client):
+    headers, _ = _signup(client)
+    highlight = {
+        "strokes": [
+            {"coordinates": [[-75.1662, 39.9530], [-75.1650, 39.9529], [-75.1642, 39.9528]], "width_m": 12},
+            {"coordinates": [[-75.1655, 39.9522]], "width_m": 8},
+        ]
+    }
+    r = client.post("/api/edits", json={"highlight": highlight, "prompt": "add bus lanes"}, headers=headers)
+    assert r.status_code == 201, r.text
+    edit = r.json()
+    assert edit["kind"] == "highlight" and edit["status"] == "done"
+    assert len(edit["highlight"]["strokes"]) == 2
+    assert edit["highlight"]["strokes"][0]["width_m"] == 12
+    # The stored polygon is the strokes' bounding box (a closed 5-point ring) and bounds contain it.
+    ring = edit["polygon"]["coordinates"][0]
+    assert len(ring) == 5 and ring[0] == ring[-1]
+    w, s, e, n = edit["bounds"]
+    assert w < -75.1662 and e > -75.1642 and s < 39.9522 and n > 39.9530
+
+    # The saved mask is opaque on a stroke and transparent far from any stroke.
+    from PIL import Image
+
+    from app.imaging import store as img_store
+
+    mask = Image.open(img_store.abs_path(img_store.asset_dir_of(edit["original_url"].removeprefix("/images/")) + "/mask.png"))
+    assert mask.getbbox() is not None
+    hist = mask.histogram()
+    opaque, transparent = hist[255], hist[0]
+    assert opaque > 0 and transparent > opaque  # a thin stroke covers a minority of the bbox crop
+
+    # Refinement reuses the stroke mask.
+    r = client.post(f"/api/edits/{edit['id']}/refine", json={"prompt": "paint them red"}, headers=headers)
+    assert r.status_code == 200 and r.json()["version_count"] == 2
+
+    r = client.post("/api/edits", json={"prompt": "no region"}, headers=headers)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "region_missing"
+    r = client.post("/api/edits", json={"highlight": {"strokes": []}, "prompt": "add bus lanes"}, headers=headers)
+    assert r.status_code == 422
 
 
 def test_create_requires_auth_and_validates(client):

@@ -46,7 +46,7 @@ export function PromptPopover({ map }: { map: MLMap }) {
   const submit = () => {
     const prompt = text.trim();
     if (prompt.length < 3) return;
-    void submitNewEdit(draw.ring, prompt);
+    void submitNewEdit(draw.region, prompt);
   };
 
   return (

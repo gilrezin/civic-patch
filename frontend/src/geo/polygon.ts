@@ -79,3 +79,58 @@ export function bboxAreaM2(ring: LngLat[]): number {
   const latC = (s + n) / 2;
   return (e - w) * 111320 * Math.cos((latC * Math.PI) / 180) * (n - s) * 110540;
 }
+
+// ---- Highlighter strokes ---------------------------------------------------
+
+export interface Stroke {
+  coords: LngLat[];
+  /** Ground width in metres, so the highlight keeps its size when the map zooms. */
+  width_m: number;
+}
+
+export type Region = { type: "polygon"; ring: LngLat[] } | { type: "highlight"; strokes: Stroke[] };
+
+const EQUATOR_M_PER_PX_Z0 = 156543.03392;
+
+/** Ground metres covered by one screen pixel at this latitude and zoom. */
+export function metersPerPixel(lat: number, zoom: number): number {
+  return (EQUATOR_M_PER_PX_Z0 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
+}
+
+/** Line-width endpoints for a zoom-exponential(2) interpolation: pixels at zoom 0 and zoom 24. */
+export function strokeWidthProps(stroke: Stroke): { w0: number; w24: number } {
+  const lat = stroke.coords[0]?.[1] ?? 0;
+  const w0 = stroke.width_m / metersPerPixel(lat, 0);
+  return { w0, w24: w0 * Math.pow(2, 24) };
+}
+
+/** Closed rectangle around all strokes, grown by each stroke's half width. */
+export function highlightBBoxRing(strokes: Stroke[]): LngLat[] {
+  let w = Infinity,
+    s = Infinity,
+    e = -Infinity,
+    n = -Infinity;
+  for (const st of strokes) {
+    const half = st.width_m / 2;
+    for (const [lng, lat] of st.coords) {
+      const dlat = half / 110540;
+      const dlng = half / (111320 * Math.max(0.05, Math.cos((lat * Math.PI) / 180)));
+      w = Math.min(w, lng - dlng);
+      e = Math.max(e, lng + dlng);
+      s = Math.min(s, lat - dlat);
+      n = Math.max(n, lat + dlat);
+    }
+  }
+  return [
+    [w, n],
+    [e, n],
+    [e, s],
+    [w, s],
+    [w, n],
+  ];
+}
+
+/** The ring used for size checks, anchoring and the pending outline of any region. */
+export function regionRing(region: Region): LngLat[] {
+  return region.type === "polygon" ? region.ring : highlightBBoxRing(region.strokes);
+}

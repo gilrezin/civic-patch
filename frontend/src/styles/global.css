@@ -333,7 +333,6 @@ button {
 .draw-hint {
   position: absolute;
   left: 64px;
-  top: 6px;
   white-space: nowrap;
   background: rgba(15, 23, 42, 0.92);
   color: var(--white);
@@ -350,6 +349,77 @@ button {
   font-size: 11px;
   color: #cbd5e1;
   font-weight: 400;
+}
+
+/* Highlighter thickness slider, shown to the right of the highlighter tool. */
+.highlight-panel {
+  position: absolute;
+  left: 64px;
+  width: 300px;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.highlight-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.highlight-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.highlight-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.highlight-preview {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--card-2);
+}
+
+.highlight-preview > span {
+  display: block;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+.highlight-hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.highlight-hint .draw-hint-keys {
+  color: var(--muted);
+}
+
+.btn-small {
+  padding: 7px 12px;
+  font-size: 13px;
+  align-self: flex-start;
 }
 
 /* Prompt popover -------------------------------------------------------- */
@@ -512,9 +582,20 @@ button {
   padding-right: 24px;
 }
 
+.panel-byline-who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .panel-author {
   color: var(--ink);
   font-weight: 700;
+}
+
+/* Relative timestamps never break mid-phrase ("3 hours / ago"). */
+.timeago {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .panel-dot {
@@ -596,6 +677,20 @@ button {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+.drawer-by {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-item-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .drawer-item-title {
@@ -831,6 +926,14 @@ button {
 .history-meta {
   font-size: 12px;
   color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.history-who {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .history-check {
@@ -852,6 +955,8 @@ button {
 .comment-meta {
   font-size: 13px;
   display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   gap: 6px;
 }
 

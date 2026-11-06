@@ -92,7 +92,9 @@ For a production build: `npm run build` (output in `frontend/dist/`).
 ## Using the site
 
 1. Create an account (email + password; your display name is public).
-2. Click **Suggest an improvement** (or press `D`), then click corners on the map to outline an area. Click the first point, double-click, or press Enter to finish. Backspace undoes a corner, Esc cancels.
+2. Pick an area in one of two ways:
+   - **Polygon** (toolbar or `D`): click corners on the map to outline an area. Click the first point, double-click, or press Enter to finish. Backspace undoes a corner, Esc cancels.
+   - **Highlighter** (toolbar or `H`): drag on the map to paint orange strokes over the parts to change; a slider next to the tool sets the thickness. Strokes can be anywhere and need not touch. Press Enter (or **Done highlighting**) to finish. Backspace removes the last stroke, Esc cancels. The highlight keeps its ground size as you zoom.
 3. Type how the area should change and press Enter. Generation takes roughly 10 to 40 seconds; a dashed outline and spinner mark the area meanwhile.
 4. Hover any edited area to see its outline; click it or its pin to open the post: votes, the prompt, edit history, **Refine proposal**, **View original**, comments and a share link.
 5. Other users' edits, votes and comments appear automatically within about 15 seconds.
@@ -107,6 +109,7 @@ Place names come from OpenStreetMap's Nominatim reverse geocoder (one request pe
 - The polygon's bounding box is expanded by a 15% context margin, snapped to a Gemini-supported aspect ratio, and rendered at a zoom level where it is roughly 800 to 1500 px wide.
 - Esri World Imagery tiles are fetched and stitched on the server; the crop's bounds are derived from integer tile-pixel edges so the returned image lines up exactly with the basemap.
 - Gemini receives the crop, the prompt (with built-environment guardrails), and the polygon mask. The returned image is resized back to the crop size.
+- For highlights, the crop covers the bounding box of all strokes and the mask is the strokes themselves (round-capped lines at their ground width), so one Gemini call handles any number of separate marks and only the highlighted pixels are shown.
 - A feathered alpha mask limits the overlay to the polygon interior. The map draws it as a raster image source above the basemap, so the original imagery inside the polygon is hidden.
 - Refinements send the previous unmasked result back to Gemini with the new instruction, creating a new version in the edit's history.
 

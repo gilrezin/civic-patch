@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import type { Map as MLMap, MapLayerMouseEvent } from "maplibre-gl";
 import { useStore } from "../state/store";
-import { LAYER, SOURCE } from "./layers";
+import { HIT_LAYERS, SOURCE } from "./layers";
 import { setPinHighlight } from "./pins";
 
 export function useHoverSelect(map: MLMap | null) {
@@ -42,13 +42,17 @@ export function useHoverSelect(map: MLMap | null) {
       useStore.getState().select(id);
     };
 
-    map.on("mousemove", LAYER.editsFill, onMove);
-    map.on("mouseleave", LAYER.editsFill, clearHover);
-    map.on("click", LAYER.editsFill, onClick);
+    for (const layer of HIT_LAYERS) {
+      map.on("mousemove", layer, onMove);
+      map.on("mouseleave", layer, clearHover);
+      map.on("click", layer, onClick);
+    }
     return () => {
-      map.off("mousemove", LAYER.editsFill, onMove);
-      map.off("mouseleave", LAYER.editsFill, clearHover);
-      map.off("click", LAYER.editsFill, onClick);
+      for (const layer of HIT_LAYERS) {
+        map.off("mousemove", layer, onMove);
+        map.off("mouseleave", layer, clearHover);
+        map.off("click", layer, onClick);
+      }
     };
   }, [map]);
 

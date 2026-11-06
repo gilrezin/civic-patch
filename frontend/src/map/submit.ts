@@ -1,18 +1,22 @@
 import { ApiError, api } from "../api/client";
-import { toPolygon, type LngLat } from "../geo/polygon";
+import { regionRing, toPolygon, type Region } from "../geo/polygon";
 import { useStore } from "../state/store";
 
 let tempSeq = -1;
 
-/** Submit a drawn ring + prompt: optimistic pending feature, POST, then replace with the server edit. */
-export async function submitNewEdit(ring: LngLat[], prompt: string): Promise<void> {
+/** Submit a finished region + prompt: optimistic pending feature, POST, then replace with the server edit. */
+export async function submitNewEdit(region: Region, prompt: string): Promise<void> {
   const st = useStore.getState();
   const tempId = tempSeq--;
-  const polygon = toPolygon(ring);
-  st.addTempEdit({ id: tempId, polygon, prompt });
-  st.setDraw({ mode: "submitting", ring, tempId });
+  const polygon = toPolygon(regionRing(region));
+  st.addTempEdit({ id: tempId, polygon, prompt, strokes: region.type === "highlight" ? region.strokes : undefined });
+  st.setDraw({ mode: "submitting", region, tempId });
   try {
-    const edit = await api.createEdit(polygon, prompt);
+    const body =
+      region.type === "polygon"
+        ? { polygon }
+        : { highlight: { strokes: region.strokes.map((s) => ({ coordinates: s.coords, width_m: s.width_m })) } };
+    const edit = await api.createEdit(body, prompt);
     const s = useStore.getState();
     s.removeTempEdit(tempId);
     s.upsertEdit(edit);

@@ -2,21 +2,23 @@ import { create } from "zustand";
 import type { Polygon } from "geojson";
 import { api, setAuthToken } from "../api/client";
 import type { EditOut, UserOut } from "../api/types";
-import type { LngLat } from "../geo/polygon";
+import type { LngLat, Region, Stroke } from "../geo/polygon";
 
-export type Tool = "pan" | "draw";
+export type Tool = "pan" | "draw" | "highlight";
 export type Drawer = "mine" | "saved" | null;
 
 export type DrawState =
   | { mode: "idle" }
   | { mode: "drawing"; vertices: LngLat[]; cursor: LngLat | null }
-  | { mode: "prompting"; ring: LngLat[]; anchor: LngLat }
-  | { mode: "submitting"; ring: LngLat[]; tempId: number };
+  | { mode: "highlighting"; strokes: Stroke[]; current: Stroke | null }
+  | { mode: "prompting"; region: Region; anchor: LngLat }
+  | { mode: "submitting"; region: Region; tempId: number };
 
 export interface TempEdit {
   id: number; // negative
   polygon: Polygon;
   prompt: string;
+  strokes?: Stroke[];
 }
 
 export interface Toast {
@@ -26,6 +28,16 @@ export interface Toast {
 }
 
 const TOKEN_KEY = "civic-patch.token";
+const HL_WIDTH_KEY = "civic-patch.highlightWidthPx";
+
+export const HIGHLIGHT_MIN_PX = 4;
+export const HIGHLIGHT_MAX_PX = 60;
+export const HIGHLIGHT_DEFAULT_PX = 18;
+
+function loadHighlightWidth(): number {
+  const v = Number(localStorage.getItem(HL_WIDTH_KEY));
+  return Number.isFinite(v) && v >= HIGHLIGHT_MIN_PX && v <= HIGHLIGHT_MAX_PX ? v : HIGHLIGHT_DEFAULT_PX;
+}
 
 interface State {
   user: UserOut | null;
@@ -45,6 +57,7 @@ interface State {
   pinsVisible: boolean;
   tool: Tool;
   draw: DrawState;
+  highlightWidthPx: number;
   locateRequest: number;
   fitRequest: { editId: number; nonce: number } | null;
   drawer: Drawer;
@@ -73,6 +86,7 @@ interface State {
   togglePins: () => void;
   setTool: (tool: Tool) => void;
   setDraw: (draw: DrawState) => void;
+  setHighlightWidthPx: (px: number) => void;
   requestLocate: () => void;
   setDrawer: (drawer: Drawer) => void;
 
@@ -100,6 +114,7 @@ export const useStore = create<State>((set, get) => ({
   pinsVisible: true,
   tool: "pan",
   draw: { mode: "idle" },
+  highlightWidthPx: loadHighlightWidth(),
   locateRequest: 0,
   fitRequest: null,
   drawer: null,
@@ -190,6 +205,11 @@ export const useStore = create<State>((set, get) => ({
   togglePins: () => set({ pinsVisible: !get().pinsVisible }),
   setTool: (tool) => set({ tool }),
   setDraw: (draw) => set({ draw }),
+  setHighlightWidthPx: (px) => {
+    const v = Math.round(Math.max(HIGHLIGHT_MIN_PX, Math.min(HIGHLIGHT_MAX_PX, px)));
+    localStorage.setItem(HL_WIDTH_KEY, String(v));
+    set({ highlightWidthPx: v });
+  },
   requestLocate: () => set({ locateRequest: get().locateRequest + 1 }),
 
   pushToast: (kind, message) => {

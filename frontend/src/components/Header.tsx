@@ -30,10 +30,10 @@ export function Header() {
       <div className="header-actions">
         <button
           type="button"
-          className={`btn btn-primary ${tool === "draw" ? "is-active" : ""}`}
-          onClick={() => setTool(tool === "draw" ? "pan" : "draw")}
+          className={`btn btn-primary ${tool !== "pan" ? "is-active" : ""}`}
+          onClick={() => setTool(tool !== "pan" ? "pan" : "draw")}
         >
-          {tool === "draw" ? "Cancel drawing" : "Suggest an improvement"}
+          {tool === "draw" ? "Cancel drawing" : tool === "highlight" ? "Cancel highlighting" : "Suggest an improvement"}
         </button>
         {user ? (
           <>

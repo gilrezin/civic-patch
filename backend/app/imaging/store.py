@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import secrets
 from pathlib import Path
 
 from PIL import Image
@@ -17,8 +18,22 @@ def images_root() -> Path:
     return root
 
 
-def rel_path(edit_id: int, name: str) -> str:
-    return f"{edit_id}/{name}"
+def new_asset_dir(edit_id: int) -> str:
+    """Per-edit folder name with a random token.
+
+    Image URLs are cached as immutable for a year, and SQLite can reuse an edit id after the
+    newest edit is deleted. The token guarantees a brand-new URL for every edit so a browser
+    can never show a deleted edit's image for a new one.
+    """
+    return f"{edit_id}-{secrets.token_hex(4)}"
+
+
+def rel_path(asset_dir: str, name: str) -> str:
+    return f"{asset_dir}/{name}"
+
+
+def asset_dir_of(rel: str) -> str:
+    return rel.rsplit("/", 1)[0]
 
 
 def abs_path(rel: str) -> Path:
@@ -52,8 +67,10 @@ def png_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-def delete_edit_files_sync(edit_id: int) -> None:
-    d = images_root() / str(edit_id)
+def delete_edit_files_sync(asset_dir: str) -> None:
+    if not asset_dir or "/" in asset_dir or "\\" in asset_dir or asset_dir in (".", ".."):
+        return
+    d = images_root() / asset_dir
     if d.is_dir():
         for p in d.iterdir():
             try:

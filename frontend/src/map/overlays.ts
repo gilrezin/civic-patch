@@ -1,8 +1,24 @@
-import type { Feature, FeatureCollection, Polygon } from "geojson";
+import type { Feature, FeatureCollection, LineString, Polygon } from "geojson";
 import type { GeoJSONSource, ImageSource, Map as MLMap } from "maplibre-gl";
 import type { EditOut } from "../api/types";
+import { strokeWidthProps, type Stroke } from "../geo/polygon";
 import type { TempEdit } from "../state/store";
 import { LAYER, SOURCE, overlayLayerId } from "./layers";
+
+/** One LineString feature per stroke, all sharing the edit id so feature-state applies to the whole edit. */
+export function strokeFeatures(id: number, status: string, strokes: Stroke[]): Feature<LineString>[] {
+  return strokes
+    .filter((s) => s.coords.length > 0)
+    .map((s) => {
+      const coords = s.coords.length === 1 ? [s.coords[0], s.coords[0]] : s.coords;
+      return {
+        type: "Feature",
+        id,
+        geometry: { type: "LineString", coordinates: coords },
+        properties: { id, status, kind: "highlight", ...strokeWidthProps(s) },
+      };
+    });
+}
 
 interface Tracked {
   url: string;
@@ -94,14 +110,20 @@ export function syncOverlays(map: MLMap, edits: EditOut[], temps: TempEdit[], op
     }
   }
 
-  const features: Feature<Polygon>[] = [];
+  const features: Feature<Polygon | LineString>[] = [];
   for (const e of edits) {
-    features.push({ type: "Feature", id: e.id, geometry: e.polygon, properties: { id: e.id, status: e.status } });
+    if (e.kind === "highlight" && e.highlight) {
+      const strokes: Stroke[] = e.highlight.strokes.map((s) => ({ coords: s.coordinates, width_m: s.width_m }));
+      features.push(...strokeFeatures(e.id, e.status, strokes));
+    } else {
+      features.push({ type: "Feature", id: e.id, geometry: e.polygon, properties: { id: e.id, status: e.status } });
+    }
   }
   for (const t of temps) {
-    features.push({ type: "Feature", id: t.id, geometry: t.polygon, properties: { id: t.id, status: "pending" } });
+    if (t.strokes) features.push(...strokeFeatures(t.id, "pending", t.strokes));
+    else features.push({ type: "Feature", id: t.id, geometry: t.polygon, properties: { id: t.id, status: "pending" } });
   }
-  const fc: FeatureCollection<Polygon> = { type: "FeatureCollection", features };
+  const fc: FeatureCollection<Polygon | LineString> = { type: "FeatureCollection", features };
   (map.getSource(SOURCE.edits) as GeoJSONSource | undefined)?.setData(fc);
 
   // Re-apply interaction state defensively after setData.

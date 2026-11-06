@@ -21,6 +21,14 @@ export const IconPolygon = (p: P) => (
   </svg>
 );
 
+export const IconHighlighter = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M9 11l-6 6v3h9l3-3" />
+    <path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
+    <path d="M14 4l6 6" />
+  </svg>
+);
+
 export const IconEye = (p: P) => (
   <svg {...base} {...p}>
     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />

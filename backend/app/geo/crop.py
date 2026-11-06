@@ -9,9 +9,9 @@ from dataclasses import dataclass
 
 from PIL import Image
 
-from .mercator import TILE, lnglat_to_px, px_to_lnglat, px_to_tile
+from .mercator import TILE, lnglat_to_px, meters_per_px, px_to_lnglat, px_to_tile
 from .tiles import fetch_tiles
-from .validate import Ring, ring_bbox
+from .validate import Ring, Stroke, ring_bbox
 
 # Aspect buckets supported by Gemini image output. Keeping the input crop on one of these
 # means the output aspect matches the input, so the final resize is a uniform scale.
@@ -120,6 +120,20 @@ def polygon_in_crop(ring: Ring, rect: CropRect, scale: float = 1.0) -> list[tupl
     for lng, lat in ring:
         x, y = lnglat_to_px(lng, lat, rect.z)
         out.append(((x - rect.x0) * scale, (y - rect.y0) * scale))
+    return out
+
+
+def strokes_in_crop(strokes: list[Stroke], rect: CropRect, scale: float = 1.0) -> list[tuple[list[tuple[float, float]], float]]:
+    """Strokes as crop-pixel polylines with pixel widths (ground metres -> pixels at the crop zoom)."""
+    out = []
+    for s in strokes:
+        pts = []
+        for lng, lat in s.coords:
+            x, y = lnglat_to_px(lng, lat, rect.z)
+            pts.append(((x - rect.x0) * scale, (y - rect.y0) * scale))
+        lat_c = sum(p[1] for p in s.coords) / len(s.coords)
+        width_px = s.width_m / meters_per_px(lat_c, rect.z) * scale
+        out.append((pts, width_px))
     return out
 
 

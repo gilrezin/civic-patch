@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type { ContributionOut, EditOut } from "../api/types";
 import { useStore } from "../state/store";
-import { timeAgo } from "../utils/time";
 import { IconArrowUp, IconBookmarkFilled, IconClose, IconMapPin } from "./icons";
+import { TimeAgo } from "./TimeAgo";
 
 function placeLabel(place: string | null, lngLat: [number, number]): string {
   if (place) return place;
@@ -81,7 +81,7 @@ export function ListDrawer() {
                   <button type="button" className="drawer-item" onClick={() => open(c.edit_id)}>
                     <div className="drawer-item-top">
                       <span className={`kind kind-${c.kind}`}>{c.kind === "edit" ? "Initial edit" : "Refinement"}</span>
-                      <span className="muted small">{timeAgo(c.created_at)}</span>
+                      <TimeAgo iso={c.created_at} className="muted small" />
                     </div>
                     <div className="drawer-item-title">{c.prompt}</div>
                     {c.kind === "refinement" && (
@@ -117,11 +117,12 @@ export function ListDrawer() {
               <li key={e.id}>
                 <button type="button" className="drawer-item" onClick={() => open(e.id)}>
                   <div className="drawer-item-top">
-                    <span className="muted small">
-                      by @{e.created_by.display_name} · {timeAgo(e.created_at)}
-                    </span>
-                    <span className="drawer-saved-icon" aria-hidden="true">
-                      <IconBookmarkFilled width={16} height={16} />
+                    <span className="muted small drawer-by">by @{e.created_by.display_name}</span>
+                    <span className="drawer-item-right">
+                      <TimeAgo iso={e.created_at} className="muted small" />
+                      <span className="drawer-saved-icon" aria-hidden="true">
+                        <IconBookmarkFilled width={16} height={16} />
+                      </span>
                     </span>
                   </div>
                   <div className="drawer-item-title">{e.original_prompt}</div>

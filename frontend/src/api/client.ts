@@ -5,6 +5,7 @@ import type {
   CommentOut,
   ContributionOut,
   EditOut,
+  HighlightOut,
   UserOut,
   VersionOut,
   VoteOut,
@@ -78,8 +79,8 @@ export const api = {
 
   listEdits: () => request<EditOut[]>("GET", "/edits"),
   getEdit: (id: number) => request<EditOut>("GET", `/edits/${id}`),
-  createEdit: (polygon: Polygon, prompt: string) =>
-    request<EditOut>("POST", "/edits", { polygon, prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
+  createEdit: (region: { polygon?: Polygon; highlight?: HighlightOut }, prompt: string) =>
+    request<EditOut>("POST", "/edits", { ...region, prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
   refineEdit: (id: number, prompt: string) =>
     request<EditOut>("POST", `/edits/${id}/refine`, { prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
   listVersions: (id: number) => request<VersionOut[]>("GET", `/edits/${id}/versions`),

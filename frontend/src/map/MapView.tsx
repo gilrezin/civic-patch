@@ -6,6 +6,7 @@ import { DEFAULT_ZOOM, PHILADELPHIA, buildStyle } from "./layers";
 import { syncOverlays } from "./overlays";
 import { syncPins } from "./pins";
 import { useDrawPolygon } from "./useDrawPolygon";
+import { useHighlight } from "./useHighlight";
 import { useHoverSelect } from "./useHoverSelect";
 import { PromptPopover } from "../components/PromptPopover";
 import { Toolbar } from "../components/Toolbar";
@@ -59,6 +60,7 @@ export function MapView() {
 
   useHoverSelect(map);
   useDrawPolygon(map);
+  useHighlight(map);
 
   // Sync overlays, outlines and pins whenever relevant state changes.
   useEffect(() => {
@@ -95,7 +97,7 @@ export function MapView() {
   return (
     <div className="map-wrap">
       <div ref={containerRef} style={mapStyle} />
-      {map && <Toolbar />}
+      {map && <Toolbar map={map} />}
       {map && <PromptPopover map={map} />}
     </div>
   );

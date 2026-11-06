@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { EditOut, VersionOut } from "../api/types";
 import { useStore } from "../state/store";
-import { timeAgo } from "../utils/time";
 import { IconCheck } from "./icons";
+import { TimeAgo } from "./TimeAgo";
 
 export function VersionHistory({ edit }: { edit: EditOut }) {
   const [versions, setVersions] = useState<VersionOut[] | null>(null);
@@ -50,7 +50,9 @@ export function VersionHistory({ edit }: { edit: EditOut }) {
               <span className="history-body">
                 <span className="history-prompt">{v.prompt}</span>
                 <span className="history-meta">
-                  @{v.created_by.display_name} · {timeAgo(v.created_at)}
+                  <span className="history-who">@{v.created_by.display_name}</span>
+                  <span aria-hidden="true">·</span>
+                  <TimeAgo iso={v.created_at} />
                 </span>
               </span>
               {active && (

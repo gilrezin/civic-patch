@@ -20,8 +20,20 @@ export interface VersionOut {
   created_at: string;
 }
 
+export interface StrokeOut {
+  coordinates: [number, number][];
+  width_m: number;
+}
+
+export interface HighlightOut {
+  strokes: StrokeOut[];
+}
+
 export interface EditOut {
   id: number;
+  kind: "polygon" | "highlight";
+  highlight: HighlightOut | null;
+  /** The drawn polygon, or for highlights the bounding box of the strokes. */
   polygon: Polygon;
   bounds: Bounds;
   status: "pending" | "done" | "failed";
