@@ -51,10 +51,37 @@ class HighlightIn(BaseModel):
     strokes: list[StrokeIn] = Field(min_length=1, max_length=60)
 
 
+class SmartIn(BaseModel):
+    """Smart-select result: mapped areas as rings plus road segments as strokes."""
+
+    polygons: list[list[list[float]]] = Field(default_factory=list, max_length=200)
+    strokes: list[StrokeIn] = Field(default_factory=list, max_length=200)
+
+
+class MaskIn(BaseModel):
+    """Quick-selection result: a binary PNG in Web Mercator tile-pixel space at `zoom`,
+    whose top-left pixel is world pixel (x0, y0)."""
+
+    zoom: int = Field(ge=10, le=20)
+    x0: int = Field(ge=0)
+    y0: int = Field(ge=0)
+    width: int = Field(ge=1, le=2048)
+    height: int = Field(ge=1, le=2048)
+    png: str = Field(min_length=8, max_length=12_000_000)
+
+
+class MaskOut(BaseModel):
+    """Outline polygons for display: each polygon is [outer ring, hole, hole, ...]."""
+
+    polygons: list[list[list[list[float]]]]
+
+
 class EditOut(BaseModel):
     id: int
-    kind: Literal["polygon", "highlight"] = "polygon"
+    kind: Literal["polygon", "highlight", "smart", "mask"] = "polygon"
     highlight: HighlightIn | None = None
+    smart: SmartIn | None = None
+    mask: MaskOut | None = None
     polygon: dict[str, Any]
     bounds: tuple[float, float, float, float]
     status: str
@@ -105,6 +132,8 @@ class EditCreateIn(BaseModel):
 
     polygon: dict[str, Any] | None = None
     highlight: HighlightIn | None = None
+    smart: SmartIn | None = None
+    mask: MaskIn | None = None
     prompt: str = Field(max_length=2000)
 
 

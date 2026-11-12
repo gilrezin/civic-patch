@@ -189,6 +189,83 @@ def test_highlight_edit_flow(client):
     assert r.status_code == 422
 
 
+def test_smart_edit_flow(client):
+    headers, _ = _signup(client)
+    smart = {
+        "polygons": [[[-75.1660, 39.9530], [-75.1655, 39.9530], [-75.1655, 39.9526], [-75.1660, 39.9526], [-75.1660, 39.9530]]],
+        "strokes": [{"coordinates": [[-75.1662, 39.9522], [-75.1650, 39.9521]], "width_m": 9}],
+    }
+    r = client.post("/api/edits", json={"smart": smart, "prompt": "add a green roof and bus lanes"}, headers=headers)
+    assert r.status_code == 201, r.text
+    edit = r.json()
+    assert edit["kind"] == "smart" and edit["status"] == "done"
+    assert len(edit["smart"]["polygons"]) == 1 and len(edit["smart"]["strokes"]) == 1
+    w, s, e, n = edit["bounds"]
+    assert w < -75.1662 and e > -75.1650 and s < 39.9521 and n > 39.9530
+
+    from PIL import Image
+
+    from app.imaging import store as img_store
+
+    mask = Image.open(img_store.abs_path(img_store.asset_dir_of(edit["original_url"].removeprefix("/images/")) + "/mask.png"))
+    hist = mask.histogram()
+    assert hist[255] > 0 and hist[0] > hist[255]
+
+    r = client.post("/api/edits", json={"smart": {"polygons": [], "strokes": []}, "prompt": "nothing"}, headers=headers)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "region_missing"
+
+
+def test_mask_edit_flow(client):
+    import base64
+    import io
+
+    from PIL import Image, ImageDraw
+
+    from app.geo.mercator import lnglat_to_px
+
+    headers, _ = _signup(client)
+    zoom = 18
+    x, y = lnglat_to_px(-75.1652, 39.9526, zoom)
+    x0, y0 = int(x) - 60, int(y) - 40
+    m = Image.new("L", (120, 80), 0)
+    ImageDraw.Draw(m).ellipse([10, 10, 109, 69], fill=255)
+    buf = io.BytesIO()
+    m.save(buf, format="PNG")
+    png = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    body = {"mask": {"zoom": zoom, "x0": x0, "y0": y0, "width": 120, "height": 80, "png": png}, "prompt": "turn this lot into a park"}
+    r = client.post("/api/edits", json=body, headers=headers)
+    assert r.status_code == 201, r.text
+    edit = r.json()
+    assert edit["kind"] == "mask" and edit["status"] == "done"
+    polys = edit["mask"]["polygons"]
+    assert len(polys) == 1 and len(polys[0]) == 1
+    ring = polys[0][0]
+    w, s, e, n = edit["bounds"]
+    assert all(w <= lng <= e and s <= lat <= n for lng, lat in ring)
+    assert len(ring) > 8  # an ellipse outline keeps many vertices
+
+    from app.imaging import store as img_store
+
+    saved = Image.open(img_store.abs_path(img_store.asset_dir_of(edit["original_url"].removeprefix("/images/")) + "/mask.png"))
+    hist = saved.histogram()
+    assert hist[255] > 0 and hist[0] > 0
+    # The ellipse covers ~pi/4 of its 120x80 box; the crop adds a 15% margin and aspect snapping,
+    # so the opaque share of the crop should be well under half but far from zero.
+    share = hist[255] / (saved.width * saved.height)
+    assert 0.15 < share < 0.6
+
+    bad = dict(body)
+    bad["mask"] = {**body["mask"], "width": 100}
+    assert client.post("/api/edits", json=bad, headers=headers).status_code == 422
+    empty = Image.new("L", (120, 80), 0)
+    buf = io.BytesIO()
+    empty.save(buf, format="PNG")
+    bad["mask"] = {**body["mask"], "png": base64.b64encode(buf.getvalue()).decode()}
+    r = client.post("/api/edits", json=bad, headers=headers)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "region_missing"
+
+
 def test_create_requires_auth_and_validates(client):
     r = client.post("/api/edits", json={"polygon": POLY, "prompt": "hello"})
     assert r.status_code == 401

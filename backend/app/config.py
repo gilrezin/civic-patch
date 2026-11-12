@@ -37,6 +37,19 @@ class Settings(BaseSettings):
     # JSON file mapping prompt keywords to extra Gemini instructions (see backend/prompt_hints.json)
     prompt_hints_file: Path = BACKEND_DIR / "prompt_hints.json"
 
+    # Overpass API mirrors for smart select, tried in order with failover (comma-separated).
+    # Benchmarked 2026-11-06 from Philadelphia with one 0.01 deg cell query:
+    #   overpass.openstreetmap.fr 2.5 s cold / 1.6 s warm; maps.mail.ru 24 s;
+    #   overpass-api.de, kumi.systems and private.coffee timed out (>30 s).
+    overpass_urls: str = (
+        "https://overpass.openstreetmap.fr/api/interpreter,"
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter,"
+        "https://overpass-api.de/api/interpreter,"
+        "https://overpass.kumi.systems/api/interpreter,"
+        "https://overpass.private.coffee/api/interpreter"
+    )
+    overpass_timeout_s: float = 15.0
+
     # Crop sizing
     min_zoom: int = 14
     max_zoom: int = 19

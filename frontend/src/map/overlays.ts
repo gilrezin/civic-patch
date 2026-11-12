@@ -1,9 +1,33 @@
 import type { Feature, FeatureCollection, LineString, Polygon } from "geojson";
 import type { GeoJSONSource, ImageSource, Map as MLMap } from "maplibre-gl";
 import type { EditOut } from "../api/types";
-import { strokeWidthProps, type Stroke } from "../geo/polygon";
+import { closeRing, strokeWidthProps, type LngLat, type Stroke } from "../geo/polygon";
 import type { TempEdit } from "../state/store";
 import { LAYER, SOURCE, overlayLayerId } from "./layers";
+
+/** One Polygon feature per ring, all sharing the edit id (smart-select areas). */
+export function ringFeatures(id: number, status: string, rings: LngLat[][]): Feature<Polygon>[] {
+  return rings
+    .filter((r) => r.length >= 3)
+    .map((r) => ({
+      type: "Feature",
+      id,
+      geometry: { type: "Polygon", coordinates: [closeRing(r)] },
+      properties: { id, status },
+    }));
+}
+
+/** Polygons with holes ([outer, hole, ...]) as features sharing the edit id (quick-selection outlines). */
+export function polygonFeatures(id: number, status: string, polygons: LngLat[][][]): Feature<Polygon>[] {
+  return polygons
+    .filter((p) => p.length >= 1 && p[0].length >= 3)
+    .map((p) => ({
+      type: "Feature",
+      id,
+      geometry: { type: "Polygon", coordinates: p.map((ring) => closeRing(ring)) },
+      properties: { id, status },
+    }));
+}
 
 /** One LineString feature per stroke, all sharing the edit id so feature-state applies to the whole edit. */
 export function strokeFeatures(id: number, status: string, strokes: Stroke[]): Feature<LineString>[] {
@@ -115,13 +139,23 @@ export function syncOverlays(map: MLMap, edits: EditOut[], temps: TempEdit[], op
     if (e.kind === "highlight" && e.highlight) {
       const strokes: Stroke[] = e.highlight.strokes.map((s) => ({ coords: s.coordinates, width_m: s.width_m }));
       features.push(...strokeFeatures(e.id, e.status, strokes));
+    } else if (e.kind === "smart" && e.smart) {
+      features.push(...ringFeatures(e.id, e.status, e.smart.polygons));
+      const strokes: Stroke[] = e.smart.strokes.map((s) => ({ coords: s.coordinates, width_m: s.width_m }));
+      features.push(...strokeFeatures(e.id, e.status, strokes));
+    } else if (e.kind === "mask" && e.mask && e.mask.polygons.length > 0) {
+      features.push(...polygonFeatures(e.id, e.status, e.mask.polygons));
     } else {
       features.push({ type: "Feature", id: e.id, geometry: e.polygon, properties: { id: e.id, status: e.status } });
     }
   }
   for (const t of temps) {
-    if (t.strokes) features.push(...strokeFeatures(t.id, "pending", t.strokes));
-    else features.push({ type: "Feature", id: t.id, geometry: t.polygon, properties: { id: t.id, status: "pending" } });
+    if (t.strokes || t.rings) {
+      if (t.rings) features.push(...ringFeatures(t.id, "pending", t.rings));
+      if (t.strokes) features.push(...strokeFeatures(t.id, "pending", t.strokes));
+    } else {
+      features.push({ type: "Feature", id: t.id, geometry: t.polygon, properties: { id: t.id, status: "pending" } });
+    }
   }
   const fc: FeatureCollection<Polygon | LineString> = { type: "FeatureCollection", features };
   (map.getSource(SOURCE.edits) as GeoJSONSource | undefined)?.setData(fc);

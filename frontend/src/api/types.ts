@@ -29,10 +29,54 @@ export interface HighlightOut {
   strokes: StrokeOut[];
 }
 
+export interface SmartOut {
+  polygons: [number, number][][];
+  strokes: StrokeOut[];
+}
+
+/** Map features for smart select, one cell at a time. */
+export interface OsmArea {
+  key: string;
+  kind: "building" | "parking" | "green";
+  label: string;
+  ring: [number, number][];
+}
+
+export interface OsmRoad {
+  key: string;
+  kind: "road" | "path";
+  label: string;
+  coords: [number, number][];
+  width_m: number;
+}
+
+export interface OsmCell {
+  cell: [number, number];
+  bbox: [number, number, number, number];
+  areas: OsmArea[];
+  roads: OsmRoad[];
+}
+
+export interface MaskOut {
+  /** Each polygon is [outer ring, hole, hole, ...] in lng/lat. */
+  polygons: [number, number][][][];
+}
+
+export interface MaskIn {
+  zoom: number;
+  x0: number;
+  y0: number;
+  width: number;
+  height: number;
+  png: string;
+}
+
 export interface EditOut {
   id: number;
-  kind: "polygon" | "highlight";
+  kind: "polygon" | "highlight" | "smart" | "mask";
   highlight: HighlightOut | null;
+  smart: SmartOut | null;
+  mask: MaskOut | null;
   /** The drawn polygon, or for highlights the bounding box of the strokes. */
   polygon: Polygon;
   bounds: Bounds;

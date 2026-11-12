@@ -115,8 +115,8 @@ def parse_highlight(data: Any) -> list[Stroke]:
     return strokes
 
 
-def highlight_bbox_ring(strokes: list[Stroke]) -> Ring:
-    """Closed rectangle ring around all strokes, grown by each stroke's half width."""
+def highlight_bbox_ring(strokes: list[Stroke], rings: list[Ring] | None = None) -> Ring:
+    """Closed rectangle ring around all strokes (grown by half width) and optional rings."""
     w = s = math.inf
     e = n = -math.inf
     for st in strokes:
@@ -128,7 +128,62 @@ def highlight_bbox_ring(strokes: list[Stroke]) -> Ring:
             e = max(e, lng + dlng)
             s = min(s, lat - dlat)
             n = max(n, lat + dlat)
+    for ring in rings or []:
+        for lng, lat in ring:
+            w, e, s, n = min(w, lng), max(e, lng), min(s, lat), max(n, lat)
+    if not math.isfinite(w):
+        raise ValidationError("region_missing", "Select at least one area first.")
     return [(w, n), (e, n), (e, s), (w, s), (w, n)]
+
+
+def parse_mask_png(png_field: str, width: int, height: int):
+    """Decode a quick-selection PNG (base64, optionally a data URL) into a thresholded 'L' image."""
+    import base64
+    import binascii
+    import io
+
+    from PIL import Image
+
+    raw = png_field.split(",", 1)[1] if png_field.startswith("data:") else png_field
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValidationError("mask_invalid", "The selection image could not be decoded.")
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception:
+        raise ValidationError("mask_invalid", "The selection image is not a valid PNG.")
+    if img.size != (width, height):
+        raise ValidationError("mask_invalid", "The selection image size does not match its declared size.")
+    if img.mode == "RGBA":
+        m = img.getchannel("A")
+    else:
+        m = img.convert("L")
+    m = m.point(lambda v: 255 if v >= 128 else 0)
+    if m.getbbox() is None:
+        raise ValidationError("region_missing", "Select some of the map first.")
+    return m
+
+
+MAX_SMART_ITEMS = 200
+
+
+def parse_smart(data: Any) -> tuple[list[Ring], list[Stroke]]:
+    """Validate a smart-select payload: {polygons: [ring...], strokes: [...]} -> (rings, strokes)."""
+    if not isinstance(data, dict):
+        raise ValidationError("smart_invalid", "Expected a smart selection.")
+    raw_polys = data.get("polygons") or []
+    raw_strokes = data.get("strokes") or []
+    if not isinstance(raw_polys, list) or not isinstance(raw_strokes, list):
+        raise ValidationError("smart_invalid", "Smart selection must list polygons and strokes.")
+    if not raw_polys and not raw_strokes:
+        raise ValidationError("region_missing", "Select at least one building, lot or road first.")
+    if len(raw_polys) + len(raw_strokes) > MAX_SMART_ITEMS:
+        raise ValidationError("smart_invalid", f"Too many selected objects (max {MAX_SMART_ITEMS}).")
+    rings = [parse_polygon({"type": "Polygon", "coordinates": [p]}) for p in raw_polys]
+    strokes = parse_highlight({"strokes": raw_strokes}) if raw_strokes else []
+    return rings, strokes
 
 
 def ring_bbox(ring: Ring) -> tuple[float, float, float, float]:

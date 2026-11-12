@@ -1,5 +1,8 @@
 import type { Map as MLMap } from "maplibre-gl";
+import { describeItems } from "../map/osmFeatures";
+import { brushRadiiM } from "../map/quickSelect";
 import { finishHighlight } from "../map/useHighlight";
+import { finishSmartSelect } from "../map/useSmartSelect";
 import { HIGHLIGHT_MAX_PX, HIGHLIGHT_MIN_PX, useStore } from "../state/store";
 import {
   IconHand,
@@ -10,6 +13,7 @@ import {
   IconMapPin,
   IconMapPinOff,
   IconPolygon,
+  IconWand,
 } from "./icons";
 
 export function Toolbar({ map }: { map: MLMap }) {
@@ -24,7 +28,10 @@ export function Toolbar({ map }: { map: MLMap }) {
   const widthPx = useStore((s) => s.highlightWidthPx);
   const setWidthPx = useStore((s) => s.setHighlightWidthPx);
 
-  const strokeCount = draw.mode === "highlighting" ? draw.strokes.length + (draw.current ? 1 : 0) : 0;
+  const strokeCount = draw.mode === "highlighting" ? draw.strokes : 0;
+  const selectionEmpty = draw.mode === "highlighting" ? draw.empty : true;
+  const radii = brushRadiiM(widthPx / HIGHLIGHT_MAX_PX);
+  const fmtM = (m: number) => (m >= 10 ? `${Math.round(m)} m` : `${m.toFixed(1)} m`);
 
   return (
     <div className="toolbar" role="toolbar" aria-label="Map tools">
@@ -47,10 +54,18 @@ export function Toolbar({ map }: { map: MLMap }) {
       <button
         type="button"
         className={`tool ${tool === "highlight" ? "is-active" : ""}`}
-        title="Highlight areas to improve (H)"
+        title="Quick select: paint over a surface to select its colour (H)"
         onClick={() => setTool(tool === "highlight" ? "pan" : "highlight")}
       >
         <IconHighlighter />
+      </button>
+      <button
+        type="button"
+        className={`tool ${tool === "smart" ? "is-active" : ""}`}
+        title="Smart select: click a building, lot or road (S)"
+        onClick={() => setTool(tool === "smart" ? "pan" : "smart")}
+      >
+        <IconWand />
       </button>
       <div className="tool-sep" />
       <button
@@ -90,7 +105,7 @@ export function Toolbar({ map }: { map: MLMap }) {
         <div className="highlight-panel" style={{ top: 6 + 2 * 48 }}>
           <div className="highlight-row">
             <label className="highlight-label" htmlFor="highlight-width">
-              Thickness
+              Brush size
             </label>
             <input
               id="highlight-width"
@@ -101,18 +116,51 @@ export function Toolbar({ map }: { map: MLMap }) {
               step={1}
               value={widthPx}
               onChange={(e) => setWidthPx(Number(e.target.value))}
-              aria-valuetext={`${widthPx} pixels`}
+              aria-valuetext={`colour match ${fmtM(radii.colourM)}, solid fill ${fmtM(radii.solidM)}`}
             />
-            <span className="highlight-preview" aria-hidden="true">
-              <span style={{ width: widthPx, height: widthPx }} />
+            <span className="highlight-preview" aria-hidden="true" title="Outer ring: colour match reach. Inner dot: fills any colour.">
+              <span className="highlight-preview-outer" style={{ width: widthPx, height: widthPx }} />
+              <span className="highlight-preview-inner" style={{ width: widthPx / 2, height: widthPx / 2 }} />
             </span>
           </div>
+          <div className="highlight-radii muted small">
+            Colour match up to {fmtM(radii.colourM)} · fills any colour within {fmtM(radii.solidM)}
+          </div>
           <div className="highlight-hint">
-            {strokeCount === 0 ? "Drag on the map to highlight an area" : `${strokeCount} highlight${strokeCount === 1 ? "" : "s"} marked`}
+            {selectionEmpty
+              ? "Hold the mouse over a surface; the selection grows to similar colours"
+              : `${strokeCount} stroke${strokeCount === 1 ? "" : "s"} · keep dragging to extend`}
             <span className="draw-hint-keys">Enter finish · Backspace undo · Esc cancel</span>
           </div>
-          <button type="button" className="btn btn-primary btn-small" disabled={strokeCount === 0} onClick={() => finishHighlight(map)}>
+          <button type="button" className="btn btn-primary btn-small" disabled={selectionEmpty} onClick={() => finishHighlight(map)}>
             Done highlighting
+          </button>
+        </div>
+      )}
+
+      {tool === "smart" && draw.mode === "smart" && (
+        <div className="highlight-panel" style={{ top: 6 + 3 * 48 }}>
+          <div className="highlight-hint">
+            {draw.status === "zoom"
+              ? "Zoom in closer to use smart select"
+              : draw.status === "loading"
+                ? "Loading map features…"
+                : draw.status === "error"
+                  ? "Map features unavailable right now"
+                  : draw.items.length === 0
+                    ? draw.candidate
+                      ? `Click to select ${draw.candidate.label}`
+                      : "Click a building, lot, park or road; drag across several"
+                    : `Selected: ${describeItems(draw.items)}`}
+            <span className="draw-hint-keys">
+              {draw.candidate && draw.items.length > 0
+                ? `${draw.candidate.label} · `
+                : ""}
+              Enter finish · Backspace undo · Esc cancel
+            </span>
+          </div>
+          <button type="button" className="btn btn-primary btn-small" disabled={draw.items.length === 0} onClick={() => finishSmartSelect(map)}>
+            Done selecting
           </button>
         </div>
       )}

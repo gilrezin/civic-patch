@@ -1,10 +1,21 @@
 import { useEffect, useRef } from "react";
 import type { Feature, FeatureCollection } from "geojson";
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from "maplibre-gl";
-import { areaM2, bboxAreaM2, centroidOf, closeRing, regionRing, type LngLat, type Region } from "../geo/polygon";
+import {
+  areaM2,
+  bboxAreaM2,
+  centroidOf,
+  closeRing,
+  regionRing,
+  smartRings,
+  smartStrokes,
+  type LngLat,
+  type Region,
+  type SmartItem,
+} from "../geo/polygon";
 import { useStore, type DrawState } from "../state/store";
 import { SOURCE } from "./layers";
-import { strokeFeatures } from "./overlays";
+import { ringFeatures, strokeFeatures } from "./overlays";
 
 const SNAP_PX = 12;
 const MAX_BBOX_KM2 = 1.0;
@@ -59,9 +70,35 @@ function previewFeatures(vertices: LngLat[], cursor: LngLat | null, snappable: b
   return { type: "FeatureCollection", features };
 }
 
+/** Selected smart items as fill + outline + stroke features; the hover candidate as a dashed outline. */
+function smartFeatures(items: SmartItem[], candidate: SmartItem | null): Feature[] {
+  const features: Feature[] = [];
+  const rings = smartRings(items);
+  features.push(...ringFeatures(-1, "preview", rings));
+  for (const r of rings) {
+    features.push({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: closeRing(r) } });
+  }
+  features.push(...strokeFeatures(-1, "preview", smartStrokes(items)));
+  if (candidate && !items.some((i) => i.key === candidate.key)) {
+    if ("ring" in candidate) {
+      features.push({ type: "Feature", properties: { candidate: true }, geometry: { type: "LineString", coordinates: closeRing(candidate.ring) } });
+    } else {
+      features.push({ type: "Feature", properties: { candidate: true }, geometry: { type: "LineString", coordinates: candidate.coords } });
+    }
+  }
+  return features;
+}
+
 function regionFeatures(region: Region): FeatureCollection {
   if (region.type === "highlight") {
     return { type: "FeatureCollection", features: strokeFeatures(-1, "preview", region.strokes) };
+  }
+  if (region.type === "smart") {
+    return { type: "FeatureCollection", features: smartFeatures(region.items, null) };
+  }
+  if (region.type === "mask") {
+    // The quick selection draws itself as a raster; nothing to add here.
+    return { type: "FeatureCollection", features: [] };
   }
   return {
     type: "FeatureCollection",
@@ -87,8 +124,9 @@ export function useDrawPolygon(map: MLMap | null) {
       const snappable = draw.vertices.length >= 3 && !!draw.cursor && nearFirst(map, draw.vertices, draw.cursor);
       src.setData(previewFeatures(draw.vertices, draw.cursor, snappable));
     } else if (draw.mode === "highlighting") {
-      const strokes = draw.current ? [...draw.strokes, draw.current] : draw.strokes;
-      src.setData({ type: "FeatureCollection", features: strokeFeatures(-1, "preview", strokes) });
+      src.setData({ type: "FeatureCollection", features: [] });
+    } else if (draw.mode === "smart") {
+      src.setData({ type: "FeatureCollection", features: smartFeatures(draw.items, draw.candidate) });
     } else if (draw.mode === "prompting") {
       src.setData(regionFeatures(draw.region));
     } else {
@@ -106,7 +144,7 @@ export function useDrawPolygon(map: MLMap | null) {
         st.setTool("pan");
         return;
       }
-      if (st.draw.mode === "idle" || st.draw.mode === "highlighting") {
+      if (st.draw.mode === "idle" || st.draw.mode === "highlighting" || st.draw.mode === "smart") {
         st.setDraw({ mode: "drawing", vertices: [], cursor: null });
       }
       map.doubleClickZoom.disable();

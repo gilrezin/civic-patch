@@ -2,15 +2,16 @@ import { create } from "zustand";
 import type { Polygon } from "geojson";
 import { api, setAuthToken } from "../api/client";
 import type { EditOut, UserOut } from "../api/types";
-import type { LngLat, Region, Stroke } from "../geo/polygon";
+import type { LngLat, MaskSelection, Region, SmartItem, Stroke } from "../geo/polygon";
 
-export type Tool = "pan" | "draw" | "highlight";
+export type Tool = "pan" | "draw" | "highlight" | "smart";
 export type Drawer = "mine" | "saved" | null;
 
 export type DrawState =
   | { mode: "idle" }
   | { mode: "drawing"; vertices: LngLat[]; cursor: LngLat | null }
-  | { mode: "highlighting"; strokes: Stroke[]; current: Stroke | null }
+  | { mode: "highlighting"; strokes: number; empty: boolean; selection: MaskSelection }
+  | { mode: "smart"; items: SmartItem[]; candidate: SmartItem | null; status: "ready" | "loading" | "zoom" | "error" }
   | { mode: "prompting"; region: Region; anchor: LngLat }
   | { mode: "submitting"; region: Region; tempId: number };
 
@@ -19,6 +20,7 @@ export interface TempEdit {
   polygon: Polygon;
   prompt: string;
   strokes?: Stroke[];
+  rings?: LngLat[][];
 }
 
 export interface Toast {

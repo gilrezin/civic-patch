@@ -29,6 +29,13 @@ export const IconHighlighter = (p: P) => (
   </svg>
 );
 
+export const IconWand = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M15 4V2M15 10v-2M11 6H9M21 6h-2M18 3l-1 1M18 9l-1-1M12 3l1 1M12 9l1-1" />
+    <path d="M14.5 7.5L3 19l2 2 11.5-11.5z" />
+  </svg>
+);
+
 export const IconEye = (p: P) => (
   <svg {...base} {...p}>
     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />

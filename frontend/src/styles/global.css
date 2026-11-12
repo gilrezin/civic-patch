@@ -396,11 +396,30 @@ button {
   background: var(--card-2);
 }
 
+.highlight-preview {
+  position: relative;
+}
+
 .highlight-preview > span {
-  display: block;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   border-radius: 50%;
+}
+
+.highlight-preview-outer {
+  background: rgba(255, 122, 0, 0.22);
+  border: 1.5px dashed var(--accent);
+}
+
+.highlight-preview-inner {
   background: var(--accent);
-  opacity: 0.6;
+  opacity: 0.85;
+}
+
+.highlight-radii {
+  margin-top: -4px;
 }
 
 .highlight-hint {

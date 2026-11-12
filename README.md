@@ -45,6 +45,7 @@ Environment variables (see `backend/example.env`):
 | `JWT_SECRET` | insecure default | Secret for signing login tokens; set a long random string |
 | `DATA_DIR` | `./data` | Where the SQLite database and generated images live |
 | `PROMPT_HINTS_FILE` | `prompt_hints.json` | Keyword to extra-instruction mapping sent to Gemini (see below) |
+| `OVERPASS_URLS` / `OVERPASS_TIMEOUT_S` | fr, mail.ru, de, kumi, coffee / `15` | Overpass mirrors for smart select, tried in order |
 | `MAX_BBOX_KM2` / `MIN_POLY_M2` | `1.0` / `20` | Selection size guardrails |
 
 ### Prompt hints
@@ -94,7 +95,8 @@ For a production build: `npm run build` (output in `frontend/dist/`).
 1. Create an account (email + password; your display name is public).
 2. Pick an area in one of two ways:
    - **Polygon** (toolbar or `D`): click corners on the map to outline an area. Click the first point, double-click, or press Enter to finish. Backspace undoes a corner, Esc cancels.
-   - **Highlighter** (toolbar or `H`): drag on the map to paint orange strokes over the parts to change; a slider next to the tool sets the thickness. Strokes can be anywhere and need not touch. Press Enter (or **Done highlighting**) to finish. Backspace removes the last stroke, Esc cancels. The highlight keeps its ground size as you zoom.
+   - **Highlighter / quick select** (toolbar or `H`): hold the mouse over a surface and the orange selection grows to neighbouring pixels of similar colour, like Photoshop's Quick Selection. Dragging extends it along the surface. The brush has two concentric radii, both set by the slider: an outer colour-matching reach (up to 50 m at maximum, a constant in the code) and an inner disc half that size that selects every pixel regardless of colour, so small gaps under the cursor fill in. Press Enter (or **Done highlighting**) to finish. Backspace removes the last stroke, Esc cancels.
+   - **Smart select** (toolbar or `S`): click a building, parking lot, park or road to select exactly that object; a road selects the segment between the two nearest intersections. Drag across several objects to collect them all; click a selected object again to remove it. Works at zoom 16 and closer. Press Enter (or **Done selecting**) to finish, Backspace to undo, Esc to cancel.
 3. Type how the area should change and press Enter. Generation takes roughly 10 to 40 seconds; a dashed outline and spinner mark the area meanwhile.
 4. Hover any edited area to see its outline; click it or its pin to open the post: votes, the prompt, edit history, **Refine proposal**, **View original**, comments and a share link.
 5. Other users' edits, votes and comments appear automatically within about 15 seconds.
@@ -103,6 +105,14 @@ For a production build: `npm run build` (output in `frontend/dist/`).
 8. The **trash** icon appears on your own suggestions. Deleting asks for confirmation, then removes the suggestion, its refinements, votes and comments from the map for everyone.
 
 Place names come from OpenStreetMap's Nominatim reverse geocoder (one request per edit, rate-limited to the service's one-per-second policy). Edits created before this feature are labelled in the background when the backend starts.
+
+### How smart select finds objects
+
+Smart select does not segment the imagery; it looks up what OpenStreetMap has mapped at the point. The backend fetches buildings, parking lots, green spaces and highways from the Overpass API in fixed 0.01° cells (about 1 km), caches each cell for an hour, and tries several mirrors in order with failover (`OVERPASS_URLS`; the French mirror was by far the fastest from the US east coast when tested). Roads are split into segments at intersections, defined as nodes shared by two or more drivable roads; crosswalks and footpaths do not split a road, and a road that merely continues under the same name across an OSM way boundary stays one segment. Road width comes from the OSM `width` tag, then `lanes`, then a per-class table. In the browser, a click picks the smallest mapped area containing the point (so a building wins over the campus around it), otherwise the nearest road segment within its half width. The selection is sent as polygons plus road strokes, and the mask is their union. Outlines are only as good as OSM coverage and usually sit within a metre or two of the Esri imagery; use the highlighter where precision matters or nothing is mapped.
+
+### How quick select picks pixels
+
+The browser fetches the same Esri tiles the map shows, at an integer zoom between 16 and 19 nearest the current view, blurs them lightly and converts them to CIELAB. The slider sets a colour-match radius (`MAX_SPREAD_M`, 50 m, scaled by slider position) and a solid radius half as large. Every pixel in the solid disc is selected outright; a small core of it defines the seed colour, whose mean and spread set a tolerance (base 10 ΔE plus 1.5× the spread, clamped to 8–28). A 4-connected flood fill then accepts neighbours within that tolerance whose lightness gradient is below an edge limit, so it stops at kerbs and roof edges, and never farther than the colour radius from the cursor position that grew them. Strokes union into one pixel mask. On finish the mask's bounding rectangle is sent as a PNG with its tile zoom and origin; the backend resamples it into the crop so Gemini only changes selected pixels, and traces its outline (with holes) for the hover highlight.
 
 ## How the imagery pipeline works
 
@@ -115,4 +125,4 @@ Place names come from OpenStreetMap's Nominatim reverse geocoder (one request pe
 
 ## Attribution and terms
 
-Basemap imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community. Place names © OpenStreetMap contributors via Nominatim. This prototype uses Esri's public World Imagery tile service without an API key; production use requires an ArcGIS Location Platform account and must follow Esri's terms of use. Generated patches are AI-modified derivatives for visualization only.
+Basemap imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community. Place names and smart-select outlines © OpenStreetMap contributors (ODbL), via Nominatim and the Overpass API. This prototype uses Esri's public World Imagery tile service without an API key; production use requires an ArcGIS Location Platform account and must follow Esri's terms of use. Generated patches are AI-modified derivatives for visualization only.

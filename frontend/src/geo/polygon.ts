@@ -88,7 +88,70 @@ export interface Stroke {
   width_m: number;
 }
 
-export type Region = { type: "polygon"; ring: LngLat[] } | { type: "highlight"; strokes: Stroke[] };
+/** One object picked by smart select: a mapped area (ring) or a road segment (stroke). */
+export type SmartItem =
+  | { key: string; kind: "building" | "parking" | "green"; label: string; ring: LngLat[] }
+  | { key: string; kind: "road" | "path"; label: string; coords: LngLat[]; width_m: number };
+
+/** Minimal view of a quick selection the region layer needs (avoids a map-module import cycle). */
+export interface MaskSelection {
+  readonly isEmpty: boolean;
+  bboxRing(): LngLat[];
+  export(): Promise<{ zoom: number; x0: number; y0: number; width: number; height: number; png: string } | null>;
+}
+
+export type Region =
+  | { type: "polygon"; ring: LngLat[] }
+  | { type: "highlight"; strokes: Stroke[] }
+  | { type: "smart"; items: SmartItem[] }
+  | { type: "mask"; selection: MaskSelection };
+
+export function smartRings(items: SmartItem[]): LngLat[][] {
+  return items.flatMap((i) => ("ring" in i ? [i.ring] : []));
+}
+
+export function smartStrokes(items: SmartItem[]): Stroke[] {
+  return items.flatMap((i) => ("coords" in i ? [{ coords: i.coords, width_m: i.width_m }] : []));
+}
+
+/** Ray-casting point-in-polygon on lng/lat (fine at city scale). */
+export function pointInRing(pt: LngLat, ring: LngLat[]): boolean {
+  let inside = false;
+  const [x, y] = pt;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Shortest distance in metres from a point to a polyline. */
+export function distanceToPolylineM(pt: LngLat, line: LngLat[]): number {
+  const kx = 111320 * Math.cos((pt[1] * Math.PI) / 180);
+  const ky = 110540;
+  const px = 0,
+    py = 0;
+  let best = Infinity;
+  for (let i = 0; i < line.length - 1; i++) {
+    const ax = (line[i][0] - pt[0]) * kx,
+      ay = (line[i][1] - pt[1]) * ky;
+    const bx = (line[i + 1][0] - pt[0]) * kx,
+      by = (line[i + 1][1] - pt[1]) * ky;
+    const dx = bx - ax,
+      dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx,
+      cy = ay + t * dy;
+    best = Math.min(best, Math.hypot(cx - px, cy - py));
+  }
+  if (line.length === 1) {
+    best = Math.hypot((line[0][0] - pt[0]) * kx, (line[0][1] - pt[1]) * ky);
+  }
+  return best;
+}
 
 const EQUATOR_M_PER_PX_Z0 = 156543.03392;
 
@@ -104,12 +167,20 @@ export function strokeWidthProps(stroke: Stroke): { w0: number; w24: number } {
   return { w0, w24: w0 * Math.pow(2, 24) };
 }
 
-/** Closed rectangle around all strokes, grown by each stroke's half width. */
-export function highlightBBoxRing(strokes: Stroke[]): LngLat[] {
+/** Closed rectangle around all strokes (grown by half width) and rings. */
+export function highlightBBoxRing(strokes: Stroke[], rings: LngLat[][] = []): LngLat[] {
   let w = Infinity,
     s = Infinity,
     e = -Infinity,
     n = -Infinity;
+  for (const ring of rings) {
+    for (const [lng, lat] of ring) {
+      w = Math.min(w, lng);
+      e = Math.max(e, lng);
+      s = Math.min(s, lat);
+      n = Math.max(n, lat);
+    }
+  }
   for (const st of strokes) {
     const half = st.width_m / 2;
     for (const [lng, lat] of st.coords) {
@@ -132,5 +203,8 @@ export function highlightBBoxRing(strokes: Stroke[]): LngLat[] {
 
 /** The ring used for size checks, anchoring and the pending outline of any region. */
 export function regionRing(region: Region): LngLat[] {
-  return region.type === "polygon" ? region.ring : highlightBBoxRing(region.strokes);
+  if (region.type === "polygon") return region.ring;
+  if (region.type === "highlight") return highlightBBoxRing(region.strokes);
+  if (region.type === "mask") return region.selection.bboxRing();
+  return highlightBBoxRing(smartStrokes(region.items), smartRings(region.items));
 }

@@ -16,7 +16,8 @@ from ..ai.hints import hints_for
 from ..ai.prompts import create_prompt, refine_prompt
 from ..ai.registry import get_editor
 from ..config import get_settings
-from ..geo.crop import build_crop, strokes_in_crop
+from ..geo.crop import build_crop, rings_in_crop, strokes_in_crop
+from ..geo.mercator import px_to_lnglat
 from ..geo.places import reverse_geocode
 from ..geo.validate import (
     ValidationError,
@@ -24,12 +25,15 @@ from ..geo.validate import (
     clean_prompt,
     highlight_bbox_ring,
     parse_highlight,
+    parse_mask_png,
     parse_polygon,
+    parse_smart,
 )
 from ..imaging import store
-from ..imaging.mask import make_overlay, polygon_mask, strokes_mask
+from ..imaging.contour import trace_outlines
+from ..imaging.mask import make_overlay, polygon_mask, raster_mask, region_mask, strokes_mask
 from ..models import Bookmark, Comment, Edit, EditVersion, User, Vote
-from ..schemas import ContributionOut, EditOut, HighlightIn, UserOut, VersionOut
+from ..schemas import ContributionOut, EditOut, HighlightIn, MaskIn, MaskOut, SmartIn, UserOut, VersionOut
 from .ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -131,15 +135,25 @@ def edit_out(edit: Edit, votes, comments, my, saved: set[int] | None = None) -> 
     cv = current_version(edit)
     first = min(edit.versions, key=lambda v: v.version_number) if edit.versions else None
     highlight = None
-    if edit.kind == "highlight" and edit.region_json:
+    smart = None
+    mask_out = None
+    if edit.region_json:
         try:
-            highlight = HighlightIn.model_validate(json.loads(edit.region_json))
+            if edit.kind == "highlight":
+                highlight = HighlightIn.model_validate(json.loads(edit.region_json))
+            elif edit.kind == "smart":
+                smart = SmartIn.model_validate(json.loads(edit.region_json))
+            elif edit.kind == "mask":
+                mask_out = MaskOut(polygons=json.loads(edit.region_json).get("polygons", []))
         except Exception:  # pragma: no cover - defensive against hand-edited rows
-            highlight = None
+            pass
+    kind = edit.kind if edit.kind in ("highlight", "smart", "mask") else "polygon"
     return EditOut(
         id=edit.id,
-        kind="highlight" if edit.kind == "highlight" else "polygon",
+        kind=kind,  # type: ignore[arg-type]
         highlight=highlight,
+        smart=smart,
+        mask=mask_out,
         polygon=json.loads(edit.polygon_geojson),
         bounds=edit.bounds,
         status=edit.status,
@@ -327,12 +341,26 @@ async def create_edit(
     prompt: str,
     polygon: dict | None = None,
     highlight: HighlightIn | None = None,
+    smart: SmartIn | None = None,
+    mask: MaskIn | None = None,
 ) -> Edit:
     settings = get_settings()
     strokes = None
+    smart_rings = None
+    mask_img = None
     try:
         prompt = clean_prompt(prompt)
-        if highlight is not None:
+        if mask is not None:
+            mask_img = parse_mask_png(mask.png, mask.width, mask.height)
+            w_, n_ = px_to_lnglat(mask.x0, mask.y0, mask.zoom)
+            e_, s_ = px_to_lnglat(mask.x0 + mask.width, mask.y0 + mask.height, mask.zoom)
+            ring = [(w_, n_), (e_, n_), (e_, s_), (w_, s_), (w_, n_)]
+            kind = "mask"
+        elif smart is not None:
+            smart_rings, strokes = parse_smart(smart.model_dump())
+            ring = highlight_bbox_ring(strokes, smart_rings)
+            kind = "smart"
+        elif highlight is not None:
             strokes = parse_highlight(highlight.model_dump())
             ring = highlight_bbox_ring(strokes)
             kind = "highlight"
@@ -367,13 +395,35 @@ async def create_edit(
 
     rect = crop.rect
     w, s, e, n = rect.bounds
+    region_json = None
+    if kind == "mask" and mask is not None and mask_img is not None:
+        outlines = await asyncio.to_thread(trace_outlines, mask_img)
+
+        def to_lnglat(ring):
+            return [list(px_to_lnglat(mask.x0 + x, mask.y0 + y, mask.zoom)) for x, y in ring]
+
+        region_json = json.dumps(
+            {
+                "zoom": mask.zoom,
+                "x0": mask.x0,
+                "y0": mask.y0,
+                "width": mask.width,
+                "height": mask.height,
+                "polygons": [[to_lnglat(r) for r in poly] for poly in outlines],
+            }
+        )
+    elif kind == "highlight" and strokes is not None:
+        region_json = json.dumps({"strokes": [{"coordinates": [list(c) for c in s.coords], "width_m": s.width_m} for s in strokes]})
+    elif kind == "smart":
+        region_json = json.dumps(
+            {
+                "polygons": [[list(c) for c in r] for r in (smart_rings or [])],
+                "strokes": [{"coordinates": [list(c) for c in s.coords], "width_m": s.width_m} for s in (strokes or [])],
+            }
+        )
     edit = Edit(
         kind=kind,
-        region_json=(
-            json.dumps({"strokes": [{"coordinates": [list(c) for c in s.coords], "width_m": s.width_m} for s in strokes]})
-            if strokes is not None
-            else None
-        ),
+        region_json=region_json,
         polygon_geojson=polygon_json,
         place_name=place_name,
         bounds_w=w,
@@ -405,7 +455,23 @@ async def create_edit(
     db.commit()
     db.refresh(edit)
 
-    if strokes is not None:
+    if kind == "mask" and mask is not None and mask_img is not None:
+        f = 2.0 ** (rect.z - mask.zoom) * crop.scale
+        mask = await asyncio.to_thread(
+            raster_mask,
+            crop.image.size,
+            mask_img,
+            ((mask.x0 * 2.0 ** (rect.z - mask.zoom) - rect.x0) * crop.scale, (mask.y0 * 2.0 ** (rect.z - mask.zoom) - rect.y0) * crop.scale),
+            (mask.width * f, mask.height * f),
+        )
+    elif kind == "smart":
+        mask = await asyncio.to_thread(
+            region_mask,
+            crop.image.size,
+            rings_in_crop(smart_rings or [], rect, crop.scale),
+            strokes_in_crop(strokes or [], rect, crop.scale),
+        )
+    elif strokes is not None:
         mask = await asyncio.to_thread(strokes_mask, crop.image.size, strokes_in_crop(strokes, rect, crop.scale))
     else:
         mask = await asyncio.to_thread(polygon_mask, crop.image.size, crop.polygon_px)

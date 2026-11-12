@@ -38,7 +38,9 @@ def get_edit(edit_id: int, db: Session = Depends(get_db), user: User | None = De
 
 @router.post("", response_model=EditOut, status_code=201)
 async def create_edit(body: EditCreateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> EditOut:
-    edit = await svc.create_edit(db, user, body.prompt, polygon=body.polygon, highlight=body.highlight)
+    edit = await svc.create_edit(
+        db, user, body.prompt, polygon=body.polygon, highlight=body.highlight, smart=body.smart, mask=body.mask
+    )
     return svc.serialize_edit(db, edit, user)
 
 

@@ -161,7 +161,11 @@ export function buildStyle(): StyleSpecification {
         source: SOURCE.draw,
         filter: ["all", ["==", ["geometry-type"], "LineString"], ["!=", ["get", "kind"], "highlight"]],
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": ACCENT, "line-width": 2.5, "line-dasharray": [1, 1.5] },
+        paint: {
+          "line-color": ["case", ["boolean", ["get", "candidate"], false], "#ffffff", ACCENT],
+          "line-width": ["case", ["boolean", ["get", "candidate"], false], 2, 2.5],
+          "line-dasharray": [1, 1.5],
+        },
       },
       {
         id: LAYER.drawHighlight,

@@ -8,6 +8,7 @@ import { syncPins } from "./pins";
 import { useDrawPolygon } from "./useDrawPolygon";
 import { useHighlight } from "./useHighlight";
 import { useHoverSelect } from "./useHoverSelect";
+import { useSmartSelect } from "./useSmartSelect";
 import { PromptPopover } from "../components/PromptPopover";
 import { Toolbar } from "../components/Toolbar";
 
@@ -61,6 +62,7 @@ export function MapView() {
   useHoverSelect(map);
   useDrawPolygon(map);
   useHighlight(map);
+  useSmartSelect(map);
 
   // Sync overlays, outlines and pins whenever relevant state changes.
   useEffect(() => {

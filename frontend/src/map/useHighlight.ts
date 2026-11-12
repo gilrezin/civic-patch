@@ -1,22 +1,31 @@
 import { useEffect, useRef } from "react";
 import type { Map as MLMap, MapMouseEvent } from "maplibre-gl";
-import { metersPerPixel, type LngLat, type Stroke } from "../geo/polygon";
-import { useStore, type DrawState } from "../state/store";
+import { HIGHLIGHT_MAX_PX, useStore, type DrawState } from "../state/store";
+import { QuickSelection, brushRadiiM, metersPerTilePixel, workingZoom, worldPx } from "./quickSelect";
 import { beginPrompt, isTypingTarget } from "./useDrawPolygon";
 
-const MIN_STEP_PX = 2.5;
-
 /**
- * Highlighter tool: press-and-drag paints orange strokes whose width is fixed in ground
- * metres (taken from the slider's pixel width at the zoom the stroke started). Enter
- * finishes and opens the prompt box; Backspace removes the last stroke; Esc cancels.
+ * Highlighter = quick selection. Holding the mouse grows a selection over pixels whose
+ * colour matches what is under the brush, up to MAX_SPREAD_M from the cursor per step.
+ * Enter finishes and opens the prompt box; Backspace removes the last stroke; Esc cancels.
  */
 export function useHighlight(map: MLMap | null) {
   const tool = useStore((s) => s.tool);
   const draw = useStore((s) => s.draw);
   const drawRef = useRef<DrawState>(draw);
   drawRef.current = draw;
+  const selRef = useRef<QuickSelection | null>(null);
   const paintingRef = useRef(false);
+
+  const syncState = () => {
+    const d = useStore.getState().draw;
+    const sel = selRef.current;
+    if (d.mode !== "highlighting" || !sel) return;
+    const empty = sel.isEmpty;
+    if (d.strokes !== sel.strokeCount || d.empty !== empty) {
+      useStore.getState().setDraw({ ...d, strokes: sel.strokeCount, empty });
+    }
+  };
 
   // Enter/leave highlight mode when the tool changes.
   useEffect(() => {
@@ -28,8 +37,12 @@ export function useHighlight(map: MLMap | null) {
         st.setTool("pan");
         return;
       }
-      if (st.draw.mode === "idle" || st.draw.mode === "drawing") {
-        st.setDraw({ mode: "highlighting", strokes: [], current: null });
+      if (st.draw.mode === "idle" || st.draw.mode === "drawing" || st.draw.mode === "smart") {
+        const sel = new QuickSelection(workingZoom(map.getZoom()));
+        sel.attach(map);
+        sel.onChange = syncState;
+        selRef.current = sel;
+        st.setDraw({ mode: "highlighting", strokes: 0, empty: true, selection: sel });
       }
       map.dragPan.disable();
       map.doubleClickZoom.disable();
@@ -37,7 +50,7 @@ export function useHighlight(map: MLMap | null) {
     } else {
       if (st.draw.mode === "highlighting") st.setDraw({ mode: "idle" });
       paintingRef.current = false;
-      map.dragPan.enable();
+      if (tool !== "smart") map.dragPan.enable();
       if (tool === "pan") {
         map.doubleClickZoom.enable();
         map.getCanvas().style.cursor = "";
@@ -45,59 +58,79 @@ export function useHighlight(map: MLMap | null) {
     }
   }, [map, tool]);
 
+  // Drop the preview raster once the selection is no longer part of the flow.
+  useEffect(() => {
+    if (!map) return;
+    const live =
+      draw.mode === "highlighting" ||
+      ((draw.mode === "prompting" || draw.mode === "submitting") && draw.region.type === "mask");
+    if (!live && selRef.current) {
+      selRef.current.detach();
+      selRef.current = null;
+    }
+  }, [map, draw]);
+
   useEffect(() => {
     if (!map) return;
 
-    const toLngLat = (e: MapMouseEvent): LngLat => [e.lngLat.lng, e.lngLat.lat];
+    /** Both radii in tile pixels: the slider scales the colour reach, the solid disc is half of it. */
+    const brushAndSpread = (lat: number) => {
+      const sel = selRef.current!;
+      const st = useStore.getState();
+      const mppTile = metersPerTilePixel(lat, sel.zoom);
+      const { colourM, solidM } = brushRadiiM(st.highlightWidthPx / HIGHLIGHT_MAX_PX);
+      return { brushPx: Math.max(1, solidM / mppTile), spreadPx: Math.max(2, colourM / mppTile) };
+    };
 
-    const finish = () => {
-      const d = drawRef.current;
-      if (d.mode !== "highlighting") return;
-      const strokes = d.current ? [...d.strokes, d.current] : d.strokes;
-      if (strokes.length === 0) {
-        useStore.getState().pushToast("info", "Drag on the map to highlight an area first.");
-        return;
-      }
-      paintingRef.current = false;
-      beginPrompt(map, { type: "highlight", strokes });
+    const paint = (e: MapMouseEvent) => {
+      const sel = selRef.current;
+      if (!sel) return;
+      const [x, y] = worldPx(e.lngLat.lng, e.lngLat.lat, sel.zoom);
+      const { brushPx, spreadPx } = brushAndSpread(e.lngLat.lat);
+      sel.stroke(x, y, brushPx, spreadPx);
     };
 
     const onDown = (e: MapMouseEvent) => {
       const d = drawRef.current;
-      if (d.mode !== "highlighting" || e.originalEvent.button !== 0) return;
+      if (d.mode !== "highlighting" || e.originalEvent.button !== 0 || !selRef.current) return;
       e.preventDefault();
-      const st = useStore.getState();
-      const pt = toLngLat(e);
-      const widthM = st.highlightWidthPx * metersPerPixel(pt[1], map.getZoom());
       paintingRef.current = true;
-      st.setDraw({ ...d, current: { coords: [pt], width_m: widthM } });
+      selRef.current.beginStroke();
+      paint(e);
+      syncState();
     };
 
     const onMove = (e: MapMouseEvent) => {
       const d = drawRef.current;
-      if (d.mode !== "highlighting" || !paintingRef.current || !d.current) return;
-      const pt = toLngLat(e);
-      const last = d.current.coords[d.current.coords.length - 1];
-      const a = map.project(last),
-        b = map.project(pt);
-      if (Math.hypot(a.x - b.x, a.y - b.y) < MIN_STEP_PX) return;
-      useStore.getState().setDraw({ ...d, current: { ...d.current, coords: [...d.current.coords, pt] } });
+      if (d.mode !== "highlighting" || !selRef.current) return;
+      if (paintingRef.current) {
+        paint(e);
+        return;
+      }
+      // Warm the tiles around the cursor so the first stroke has pixels to read.
+      const sel = selRef.current;
+      const [x, y] = worldPx(e.lngLat.lng, e.lngLat.lat, sel.zoom);
+      const { brushPx, spreadPx } = brushAndSpread(e.lngLat.lat);
+      sel.prefetch(x, y, spreadPx + brushPx);
     };
 
     const endStroke = () => {
-      const d = drawRef.current;
-      if (d.mode !== "highlighting" || !paintingRef.current) return;
+      if (!paintingRef.current) return;
       paintingRef.current = false;
-      if (!d.current) return;
-      let stroke: Stroke = d.current;
-      if (stroke.coords.length === 1) {
-        // A click without drag becomes a dot: nudge a second point one pixel over so
-        // the round-capped line renders.
-        const p = map.project(stroke.coords[0]);
-        const q = map.unproject([p.x + 1, p.y]);
-        stroke = { ...stroke, coords: [stroke.coords[0], [q.lng, q.lat]] };
+      selRef.current?.endStroke();
+      syncState();
+    };
+
+    const finish = () => {
+      const d = drawRef.current;
+      const sel = selRef.current;
+      if (d.mode !== "highlighting" || !sel) return;
+      if (sel.isEmpty) {
+        useStore.getState().pushToast("info", "Hold the mouse over a surface to select it first.");
+        return;
       }
-      useStore.getState().setDraw({ mode: "highlighting", strokes: [...d.strokes, stroke], current: null });
+      paintingRef.current = false;
+      beginPrompt(map, { type: "mask", selection: sel });
     };
 
     const onKey = (e: KeyboardEvent) => {
@@ -110,8 +143,8 @@ export function useHighlight(map: MLMap | null) {
           finish();
         } else if (e.key === "Backspace") {
           e.preventDefault();
-          if (d.current) st.setDraw({ ...d, current: null });
-          else st.setDraw({ ...d, strokes: d.strokes.slice(0, -1) });
+          selRef.current?.undoStroke();
+          syncState();
         } else if (e.key === "Escape") {
           st.setDraw({ mode: "idle" });
           st.setTool("pan");
@@ -121,19 +154,17 @@ export function useHighlight(map: MLMap | null) {
       if (d.mode === "idle" && (e.key === "h" || e.key === "H")) st.setTool("highlight");
     };
 
-    const canvas = map.getCanvasContainer();
-    const onLeave = () => endStroke();
-
+    const container = map.getCanvasContainer();
     map.on("mousedown", onDown);
     map.on("mousemove", onMove);
     map.on("mouseup", endStroke);
-    canvas.addEventListener("mouseleave", onLeave);
+    container.addEventListener("mouseleave", endStroke);
     window.addEventListener("keydown", onKey);
     return () => {
       map.off("mousedown", onDown);
       map.off("mousemove", onMove);
       map.off("mouseup", endStroke);
-      canvas.removeEventListener("mouseleave", onLeave);
+      container.removeEventListener("mouseleave", endStroke);
       window.removeEventListener("keydown", onKey);
     };
   }, [map]);
@@ -143,10 +174,9 @@ export function useHighlight(map: MLMap | null) {
 export function finishHighlight(map: MLMap) {
   const d = useStore.getState().draw;
   if (d.mode !== "highlighting") return;
-  const strokes = d.current ? [...d.strokes, d.current] : d.strokes;
-  if (strokes.length === 0) {
-    useStore.getState().pushToast("info", "Drag on the map to highlight an area first.");
+  if (d.selection.isEmpty) {
+    useStore.getState().pushToast("info", "Hold the mouse over a surface to select it first.");
     return;
   }
-  beginPrompt(map, { type: "highlight", strokes });
+  beginPrompt(map, { type: "mask", selection: d.selection });
 }

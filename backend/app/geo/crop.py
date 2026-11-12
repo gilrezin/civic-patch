@@ -123,6 +123,10 @@ def polygon_in_crop(ring: Ring, rect: CropRect, scale: float = 1.0) -> list[tupl
     return out
 
 
+def rings_in_crop(rings: list[Ring], rect: CropRect, scale: float = 1.0) -> list[list[tuple[float, float]]]:
+    return [polygon_in_crop(r, rect, scale) for r in rings]
+
+
 def strokes_in_crop(strokes: list[Stroke], rect: CropRect, scale: float = 1.0) -> list[tuple[list[tuple[float, float]], float]]:
     """Strokes as crop-pixel polylines with pixel widths (ground metres -> pixels at the crop zoom)."""
     out = []

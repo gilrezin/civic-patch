@@ -33,7 +33,13 @@ export function Header() {
           className={`btn btn-primary ${tool !== "pan" ? "is-active" : ""}`}
           onClick={() => setTool(tool !== "pan" ? "pan" : "draw")}
         >
-          {tool === "draw" ? "Cancel drawing" : tool === "highlight" ? "Cancel highlighting" : "Suggest an improvement"}
+          {tool === "draw"
+            ? "Cancel drawing"
+            : tool === "highlight"
+              ? "Cancel highlighting"
+              : tool === "smart"
+                ? "Cancel selecting"
+                : "Suggest an improvement"}
         </button>
         {user ? (
           <>

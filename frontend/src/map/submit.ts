@@ -1,5 +1,5 @@
 import { ApiError, api } from "../api/client";
-import { regionRing, toPolygon, type Region } from "../geo/polygon";
+import { regionRing, smartRings, smartStrokes, toPolygon, type Region } from "../geo/polygon";
 import { useStore } from "../state/store";
 
 let tempSeq = -1;
@@ -8,14 +8,39 @@ let tempSeq = -1;
 export async function submitNewEdit(region: Region, prompt: string): Promise<void> {
   const st = useStore.getState();
   const tempId = tempSeq--;
+  let maskPayload = null;
+  if (region.type === "mask") {
+    maskPayload = await region.selection.export();
+    if (!maskPayload) {
+      st.pushToast("error", "The selection is empty.");
+      st.setDraw({ mode: "idle" });
+      st.setTool("pan");
+      return;
+    }
+  }
   const polygon = toPolygon(regionRing(region));
-  st.addTempEdit({ id: tempId, polygon, prompt, strokes: region.type === "highlight" ? region.strokes : undefined });
+  const temp: Parameters<typeof st.addTempEdit>[0] = { id: tempId, polygon, prompt };
+  if (region.type === "highlight") temp.strokes = region.strokes;
+  if (region.type === "smart") {
+    temp.strokes = smartStrokes(region.items);
+    temp.rings = smartRings(region.items);
+  }
+  st.addTempEdit(temp);
   st.setDraw({ mode: "submitting", region, tempId });
   try {
     const body =
       region.type === "polygon"
         ? { polygon }
-        : { highlight: { strokes: region.strokes.map((s) => ({ coordinates: s.coords, width_m: s.width_m })) } };
+        : region.type === "highlight"
+          ? { highlight: { strokes: region.strokes.map((s) => ({ coordinates: s.coords, width_m: s.width_m })) } }
+          : region.type === "mask"
+            ? { mask: maskPayload! }
+            : {
+                smart: {
+                  polygons: smartRings(region.items),
+                  strokes: smartStrokes(region.items).map((s) => ({ coordinates: s.coords, width_m: s.width_m })),
+                },
+              };
     const edit = await api.createEdit(body, prompt);
     const s = useStore.getState();
     s.removeTempEdit(tempId);

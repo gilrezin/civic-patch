@@ -6,6 +6,9 @@ import type {
   ContributionOut,
   EditOut,
   HighlightOut,
+  MaskIn,
+  OsmCell,
+  SmartOut,
   UserOut,
   VersionOut,
   VoteOut,
@@ -79,8 +82,9 @@ export const api = {
 
   listEdits: () => request<EditOut[]>("GET", "/edits"),
   getEdit: (id: number) => request<EditOut>("GET", `/edits/${id}`),
-  createEdit: (region: { polygon?: Polygon; highlight?: HighlightOut }, prompt: string) =>
+  createEdit: (region: { polygon?: Polygon; highlight?: HighlightOut; smart?: SmartOut; mask?: MaskIn }, prompt: string) =>
     request<EditOut>("POST", "/edits", { ...region, prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
+  osmCell: (ix: number, iy: number) => request<OsmCell>("GET", `/osm/cell/${ix}/${iy}`, undefined, { timeoutMs: 40_000 }),
   refineEdit: (id: number, prompt: string) =>
     request<EditOut>("POST", `/edits/${id}/refine`, { prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
   listVersions: (id: number) => request<VersionOut[]>("GET", `/edits/${id}/versions`),
