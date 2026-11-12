@@ -148,6 +148,17 @@ class Vote(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
 
 
+class OsmCellCache(Base):
+    """Processed OpenStreetMap features for one smart-select cell, kept across restarts."""
+
+    __tablename__ = "osm_cells"
+
+    ix: Mapped[int] = mapped_column(Integer, primary_key=True)
+    iy: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fetched_at: Mapped[float] = mapped_column(Float, nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class Bookmark(Base):
     """Private per-user saved posts."""
 

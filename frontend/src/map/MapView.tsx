@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type Map as MLMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { api } from "../api/client";
 import { useStore } from "../state/store";
 import { DEFAULT_ZOOM, PHILADELPHIA, buildStyle } from "./layers";
 import { syncOverlays } from "./overlays";
@@ -58,6 +59,28 @@ export function MapView() {
     if (!map || locateRequest === 0) return;
     locate(map, true);
   }, [map, locateRequest]);
+
+  // Warm the smart-select cells around the signed-in user's start area, once the map has
+  // settled on it (after the geolocation jump, if any). Fire-and-forget.
+  const user = useStore((s) => s.user);
+  useEffect(() => {
+    if (!map || !user) return;
+    let done = false;
+    const fire = () => {
+      if (done) return;
+      done = true;
+      const c = map.getCenter();
+      api.osmPrefetch(c.lng, c.lat).catch(() => {});
+    };
+    const timer = window.setTimeout(() => {
+      if (map.isMoving()) map.once("idle", fire);
+      else fire();
+    }, 2500);
+    return () => {
+      window.clearTimeout(timer);
+      done = true;
+    };
+  }, [map, user?.id]);
 
   useHoverSelect(map);
   useDrawPolygon(map);

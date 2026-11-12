@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { Map as MLMap, MapMouseEvent } from "maplibre-gl";
-import type { LngLat, SmartItem } from "../geo/polygon";
+import { pointInRing, type LngLat, type SmartItem } from "../geo/polygon";
 import { useStore, type DrawState } from "../state/store";
-import { SMART_MIN_ZOOM, ensureCells, featureAt } from "./osmFeatures";
+import { MAX_BLOCK_SEARCH_M } from "./blocks";
+import { SMART_MIN_ZOOM, ensureAround, isReadyAround, smartHit, type SmartHit } from "./osmFeatures";
 import { beginPrompt, isTypingTarget } from "./useDrawPolygon";
 
 const DRAG_THRESHOLD_PX = 4;
@@ -47,37 +48,59 @@ export function useSmartSelect(map: MLMap | null) {
     }
   }, [map, tool]);
 
-  // Load the cells under the viewport whenever the tool is active and the map settles.
+  // Load cells on demand around the cursor (and the map centre when it settles) instead of
+  // fetching the whole viewport up front: one request in the common case, never a burst.
   useEffect(() => {
     if (!map || tool !== "smart") return;
+    let lastErrorAt = 0;
 
-    const load = async () => {
+    const loadAround = async (pt: LngLat) => {
       const d = useStore.getState().draw;
       if (d.mode !== "smart") return;
       if (map.getZoom() < SMART_MIN_ZOOM) {
-        useStore.getState().setDraw({ ...d, status: "zoom" });
+        if (d.status !== "zoom") useStore.getState().setDraw({ ...d, status: "zoom" });
+        return;
+      }
+      if (isReadyAround(pt)) {
+        if (d.status !== "ready") useStore.getState().setDraw({ ...d, status: "ready" });
         return;
       }
       const seq = ++loadSeq.current;
-      useStore.getState().setDraw({ ...d, status: "loading" });
-      const b = map.getBounds();
+      if (d.status !== "loading") useStore.getState().setDraw({ ...d, status: "loading" });
       try {
-        await ensureCells(b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
+        await ensureAround(pt);
         const cur = useStore.getState().draw;
         if (seq === loadSeq.current && cur.mode === "smart") useStore.getState().setDraw({ ...cur, status: "ready" });
       } catch {
         const cur = useStore.getState().draw;
         if (seq === loadSeq.current && cur.mode === "smart") {
           useStore.getState().setDraw({ ...cur, status: "error" });
-          useStore.getState().pushToast("error", "Map features could not be loaded. Try again in a moment.");
+          if (Date.now() - lastErrorAt > 8000) {
+            lastErrorAt = Date.now();
+            useStore.getState().pushToast("error", "Map features could not be loaded. Try again in a moment.");
+          }
         }
       }
     };
 
-    void load();
-    map.on("moveend", load);
+    const centre = () => {
+      const c = map.getCenter();
+      void loadAround([c.lng, c.lat]);
+    };
+    let throttle = 0;
+    const onMove = (e: MapMouseEvent) => {
+      const now = Date.now();
+      if (now - throttle < 150) return;
+      throttle = now;
+      void loadAround([e.lngLat.lng, e.lngLat.lat]);
+    };
+
+    centre();
+    map.on("moveend", centre);
+    map.on("mousemove", onMove);
     return () => {
-      map.off("moveend", load);
+      map.off("moveend", centre);
+      map.off("mousemove", onMove);
     };
   }, [map, tool]);
 
@@ -97,6 +120,20 @@ export function useSmartSelect(map: MLMap | null) {
       useStore.getState().setDraw({ ...d, items, candidate: exists ? item : null });
     };
 
+    /** An already-selected or hovered polygon containing the point, so blocks are not recomputed every move. */
+    const containing = (d: Extract<DrawState, { mode: "smart" }>, pt: LngLat): SmartItem | null => {
+      for (const i of d.items) if ("ring" in i && pointInRing(pt, i.ring)) return i;
+      if (d.candidate && "ring" in d.candidate && pointInRing(pt, d.candidate.ring)) return d.candidate;
+      return null;
+    };
+
+    /** Resolve what the point selects, reusing a containing polygon when there is one. */
+    const resolve = (d: Extract<DrawState, { mode: "smart" }>, pt: LngLat): SmartHit => {
+      const have = containing(d, pt);
+      if (have) return { kind: "item", item: have };
+      return smartHit(pt);
+    };
+
     const onDown = (e: MapMouseEvent) => {
       const d = drawRef.current;
       if (d.mode !== "smart" || e.originalEvent.button !== 0) return;
@@ -107,16 +144,21 @@ export function useSmartSelect(map: MLMap | null) {
     const onMove = (e: MapMouseEvent) => {
       const d = drawRef.current;
       if (d.mode !== "smart" || d.status !== "ready") return;
-      const item = featureAt(toLngLat(e));
+      const pt = toLngLat(e);
       const press = pressRef.current;
       if (press) {
         if (!press.dragged && Math.hypot(e.point.x - press.x, e.point.y - press.y) >= DRAG_THRESHOLD_PX) press.dragged = true;
-        if (press.dragged && item) addItem(d, item);
+        if (!press.dragged) return;
+        // While dragging, skip points inside something already selected (cheap) before resolving.
+        if (d.items.some((i) => "ring" in i && pointInRing(pt, i.ring))) return;
+        const hit = smartHit(pt);
+        if (hit.kind === "item") addItem(d, hit.item);
         return;
       }
-      const cand = item ?? null;
+      const hit = resolve(d, pt);
+      const cand = hit.kind === "item" ? hit.item : null;
       if ((cand?.key ?? null) !== (d.candidate?.key ?? null)) useStore.getState().setDraw({ ...d, candidate: cand });
-      map.getCanvas().style.cursor = cand ? "pointer" : "crosshair";
+      map.getCanvas().style.cursor = cand ? "pointer" : hit.kind === "road" ? "not-allowed" : "crosshair";
     };
 
     const onUp = (e: MapMouseEvent) => {
@@ -124,25 +166,35 @@ export function useSmartSelect(map: MLMap | null) {
       const press = pressRef.current;
       pressRef.current = null;
       if (d.mode !== "smart" || !press) return;
+      const st = useStore.getState();
       if (d.status === "zoom") {
-        useStore.getState().pushToast("info", "Zoom in closer to use smart select.");
+        st.pushToast("info", "Zoom in closer to use smart select.");
         return;
       }
       if (d.status !== "ready") return;
-      const item = featureAt(toLngLat(e));
+      const pt = toLngLat(e);
+      const hit = resolve(d, pt);
       if (press.dragged) {
-        if (item) addItem(d, item);
+        if (hit.kind === "item") addItem(d, hit.item);
         return;
       }
-      if (item) toggleItem(d, item);
-      else useStore.getState().pushToast("info", "Nothing mapped here. Try the polygon or highlighter tool for this spot.");
+      if (hit.kind === "item") {
+        toggleItem(d, hit.item);
+        if (hit.truncated) {
+          st.pushToast("info", `No enclosing roads within ${MAX_BLOCK_SEARCH_M} m; the block was cut off at that distance.`);
+        }
+      } else if (hit.kind === "road") {
+        st.pushToast("info", "Roads can't be selected. Click a building, lot or the open area between roads.");
+      } else if (hit.kind === "empty") {
+        st.pushToast("info", "No roads mapped nearby to bound a block. Try the polygon or highlighter tool here.");
+      }
     };
 
     const finish = () => {
       const d = drawRef.current;
       if (d.mode !== "smart") return;
       if (d.items.length === 0) {
-        useStore.getState().pushToast("info", "Click a building, lot or road first.");
+        useStore.getState().pushToast("info", "Click a building, lot or block first.");
         return;
       }
       beginPrompt(map, { type: "smart", items: d.items });
@@ -186,7 +238,7 @@ export function finishSmartSelect(map: MLMap) {
   const d = useStore.getState().draw;
   if (d.mode !== "smart") return;
   if (d.items.length === 0) {
-    useStore.getState().pushToast("info", "Click a building, lot or road first.");
+    useStore.getState().pushToast("info", "Click a building, lot or block first.");
     return;
   }
   beginPrompt(map, { type: "smart", items: d.items });

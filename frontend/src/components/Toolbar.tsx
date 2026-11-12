@@ -150,7 +150,7 @@ export function Toolbar({ map }: { map: MLMap }) {
                   : draw.items.length === 0
                     ? draw.candidate
                       ? `Click to select ${draw.candidate.label}`
-                      : "Click a building, lot, park or road; drag across several"
+                      : "Click a building or lot, or an open area to select its whole block"
                     : `Selected: ${describeItems(draw.items)}`}
             <span className="draw-hint-keys">
               {draw.candidate && draw.items.length > 0

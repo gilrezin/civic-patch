@@ -85,6 +85,7 @@ export const api = {
   createEdit: (region: { polygon?: Polygon; highlight?: HighlightOut; smart?: SmartOut; mask?: MaskIn }, prompt: string) =>
     request<EditOut>("POST", "/edits", { ...region, prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
   osmCell: (ix: number, iy: number) => request<OsmCell>("GET", `/osm/cell/${ix}/${iy}`, undefined, { timeoutMs: 40_000 }),
+  osmPrefetch: (lng: number, lat: number) => request<{ queued: number }>("POST", "/osm/prefetch", { lng, lat }),
   refineEdit: (id: number, prompt: string) =>
     request<EditOut>("POST", `/edits/${id}/refine`, { prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
   listVersions: (id: number) => request<VersionOut[]>("GET", `/edits/${id}/versions`),

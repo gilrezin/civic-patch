@@ -9,6 +9,7 @@ failover) and cached in memory. Ways are turned into:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import re
@@ -43,16 +44,25 @@ CLASS_WIDTH_M = {
     "footway": 2.5, "cycleway": 2.5, "path": 2.0, "steps": 2.5, "bridleway": 2.5, "track": 3.0,
 }
 
-QUERY = """[out:json][timeout:12];
+_DRIVABLE_RE = "^(" + "|".join(sorted(DRIVABLE)) + ")$"
+
+# Only drivable roads are requested: paths are neither selectable nor block boundaries, and
+# dropping them removes a large share of the payload in dense city centres. `qt` output is
+# the server's cheapest ordering.
+QUERY = (
+    """[out:json][timeout:20];
 (
   way["building"]({s},{w},{n},{e});
   relation["building"]["type"="multipolygon"]({s},{w},{n},{e});
   way["amenity"="parking"]({s},{w},{n},{e});
   way["leisure"~"^(park|pitch|playground|garden|dog_park)$"]({s},{w},{n},{e});
   way["landuse"~"^(grass|recreation_ground|cemetery|village_green)$"]({s},{w},{n},{e});
-  way["highway"]({s},{w},{n},{e});
+  way["highway"~\""""
+    + _DRIVABLE_RE
+    + """\"]({s},{w},{n},{e});
 );
-out geom;"""
+out geom qt;"""
+)
 
 
 class OverpassError(RuntimeError):
@@ -206,7 +216,6 @@ def process_elements(elements: list[dict]) -> CellFeatures:
 
 def _split_roads(ways: list[dict]) -> list[Road]:
     drivable = [w for w in ways if (w.get("tags") or {}).get("highway") in DRIVABLE and w.get("nodes")]
-    paths = [w for w in ways if (w.get("tags") or {}).get("highway") in PATHS and w.get("nodes")]
 
     # Which drivable ways touch each node, and whether as an endpoint.
     node_ways: dict[int, set[int]] = defaultdict(set)
@@ -267,13 +276,6 @@ def _split_roads(ways: list[dict]) -> list[Road]:
                 width_m=round(estimate_width_m(tags), 2),
             )
         )
-    for w in paths:
-        geom = w.get("geometry") or []
-        if len(geom) >= 2:
-            tags = w.get("tags") or {}
-            roads.append(
-                Road(key=f"h{w['id']}", kind="path", label=_road_label(tags), coords=_ring(geom), width_m=round(estimate_width_m(tags), 2))
-            )
     return roads
 
 
@@ -350,6 +352,22 @@ _mirror_fail_until: dict[str, float] = {}
 _preferred_mirror: str | None = None
 _client: httpx.AsyncClient | None = None
 
+# Overpass mirrors rate-limit bursts (8 parallel cell queries produced 503s in testing), so all
+# queries go through one small gate and a 503/429 is retried on the same mirror after a pause
+# instead of benching the mirror.
+MAX_INFLIGHT = 2
+RETRY_DELAYS_S = (1.5, 3.0, 5.0)
+DB_TTL_S = 24 * 3600.0
+_gate: asyncio.Semaphore | None = None
+_prefetch_tasks: set[asyncio.Task] = set()
+
+
+def _gate_sem() -> asyncio.Semaphore:
+    global _gate
+    if _gate is None:
+        _gate = asyncio.Semaphore(MAX_INFLIGHT)
+    return _gate
+
 
 def mirrors() -> list[str]:
     urls = [u.strip() for u in get_settings().overpass_urls.split(",") if u.strip()]
@@ -375,38 +393,97 @@ async def close_client() -> None:
     _client = None
 
 
+class _Busy(Exception):
+    """Mirror answered 429/503/504: back off and retry on the same mirror."""
+
+
+async def _post(url: str, query: str) -> list[dict]:
+    resp = await _get_client().post(url, data={"data": query})
+    if resp.status_code in (429, 503, 504):
+        raise _Busy(f"HTTP {resp.status_code}")
+    if resp.status_code >= 500:
+        raise OverpassError(f"HTTP {resp.status_code}")
+    resp.raise_for_status()
+    data = resp.json()
+    if "elements" not in data:
+        raise OverpassError("malformed response")
+    return data["elements"]
+
+
 async def _query_overpass(query: str) -> list[dict]:
     global _preferred_mirror
-    now = time.monotonic()
     errors: list[str] = []
-    for url in mirrors():
-        if _mirror_fail_until.get(url, 0) > now:
-            continue
-        t = time.perf_counter()
-        try:
-            resp = await _get_client().post(url, data={"data": query})
-            if resp.status_code in (429, 504, 503, 502, 500):
-                raise OverpassError(f"HTTP {resp.status_code}")
-            resp.raise_for_status()
-            data = resp.json()
-            if "elements" not in data:
-                raise OverpassError("malformed response")
-            _preferred_mirror = url
-            log.info("overpass %s ok in %.2fs (%d elements)", url, time.perf_counter() - t, len(data["elements"]))
-            return data["elements"]
-        except Exception as exc:
-            errors.append(f"{url}: {exc}")
-            _mirror_fail_until[url] = time.monotonic() + 120.0
-            log.warning("overpass mirror failed: %s: %s", url, exc)
+    async with _gate_sem():
+        for url in mirrors():
+            if _mirror_fail_until.get(url, 0) > time.monotonic():
+                continue
+            t = time.perf_counter()
+            for attempt, delay in enumerate((0.0,) + RETRY_DELAYS_S):
+                if delay:
+                    await asyncio.sleep(delay)
+                try:
+                    elements = await _post(url, query)
+                    _preferred_mirror = url
+                    log.info(
+                        "overpass %s ok in %.2fs (%d elements, attempt %d)", url, time.perf_counter() - t, len(elements), attempt + 1
+                    )
+                    return elements
+                except _Busy as exc:
+                    errors.append(f"{url}: {exc}")
+                    log.info("overpass %s busy (%s), retrying", url, exc)
+                    continue
+                except Exception as exc:  # connect error, timeout, 5xx, bad body: try the next mirror
+                    errors.append(f"{url}: {exc}")
+                    _mirror_fail_until[url] = time.monotonic() + 120.0
+                    log.warning("overpass mirror failed: %s: %s", url, exc)
+                    break
     raise OverpassError("All Overpass mirrors failed: " + "; ".join(errors))
 
 
+# ---- persistent cell cache (SQLite) -----------------------------------------
+
+
+def _db_load(ix: int, iy: int) -> dict | None:
+    from ..db import SessionLocal
+    from ..models import OsmCellCache
+
+    with SessionLocal() as db:
+        row = db.get(OsmCellCache, (ix, iy))
+        if row is None or time.time() - row.fetched_at > DB_TTL_S:
+            return None
+        try:
+            return json.loads(row.payload)
+        except json.JSONDecodeError:
+            return None
+
+
+def _db_store(ix: int, iy: int, data: dict) -> None:
+    from ..db import SessionLocal
+    from ..models import OsmCellCache
+
+    with SessionLocal() as db:
+        row = db.get(OsmCellCache, (ix, iy))
+        payload = json.dumps(data, separators=(",", ":"))
+        if row is None:
+            db.add(OsmCellCache(ix=ix, iy=iy, fetched_at=time.time(), payload=payload))
+        else:
+            row.fetched_at = time.time()
+            row.payload = payload
+        db.commit()
+
+
+def _remember(key: tuple[int, int], data: dict) -> None:
+    _cache[key] = (time.monotonic(), data)
+    _cache.move_to_end(key)
+    while len(_cache) > CACHE_MAX_CELLS:
+        _cache.popitem(last=False)
+
+
 async def get_cell(ix: int, iy: int) -> dict:
-    """Processed features for a cell, from cache or Overpass."""
+    """Processed features for a cell: memory cache, then SQLite (24 h), then Overpass."""
     key = (ix, iy)
-    now = time.monotonic()
     hit = _cache.get(key)
-    if hit and now - hit[0] < CACHE_TTL_S:
+    if hit and time.monotonic() - hit[0] < CACHE_TTL_S:
         _cache.move_to_end(key)
         return hit[1]
     lock = _locks.setdefault(key, asyncio.Lock())
@@ -414,13 +491,54 @@ async def get_cell(ix: int, iy: int) -> dict:
         hit = _cache.get(key)
         if hit and time.monotonic() - hit[0] < CACHE_TTL_S:
             return hit[1]
+        try:
+            stored = await asyncio.to_thread(_db_load, ix, iy)
+        except Exception as exc:  # cache problems must never block the feature
+            log.warning("osm cell cache read failed: %s", exc)
+            stored = None
+        if stored is not None:
+            _remember(key, stored)
+            return stored
         w, s, e, n = cell_bbox(ix, iy)
         elements = await _query_overpass(QUERY.format(s=s, w=w, n=n, e=e))
         data = await asyncio.to_thread(lambda: process_elements(elements).to_json())
         data["cell"] = [ix, iy]
         data["bbox"] = [w, s, e, n]
-        _cache[key] = (time.monotonic(), data)
-        _cache.move_to_end(key)
-        while len(_cache) > CACHE_MAX_CELLS:
-            _cache.popitem(last=False)
+        _remember(key, data)
+        try:
+            await asyncio.to_thread(_db_store, ix, iy, data)
+        except Exception as exc:
+            log.warning("osm cell cache write failed: %s", exc)
         return data
+
+
+def is_cached(ix: int, iy: int) -> bool:
+    hit = _cache.get((ix, iy))
+    return bool(hit and time.monotonic() - hit[0] < CACHE_TTL_S)
+
+
+def schedule_prefetch(lng: float, lat: float, radius_cells: int = 1) -> int:
+    """Warm the cells around a point in the background (sequentially through the gate)."""
+    ix, iy = cell_of(lng, lat)
+    todo = [
+        (ix + dx, iy + dy)
+        for dy in range(-radius_cells, radius_cells + 1)
+        for dx in range(-radius_cells, radius_cells + 1)
+        if not is_cached(ix + dx, iy + dy)
+    ]
+    # Centre first, then the ring around it.
+    todo.sort(key=lambda c: abs(c[0] - ix) + abs(c[1] - iy))
+
+    async def run() -> None:
+        for cx, cy in todo:
+            try:
+                await get_cell(cx, cy)
+            except Exception as exc:
+                log.info("prefetch of cell %d,%d skipped: %s", cx, cy, exc)
+                break  # the mirrors are struggling; do not pile on
+
+    if todo:
+        task = asyncio.get_running_loop().create_task(run())
+        _prefetch_tasks.add(task)
+        task.add_done_callback(_prefetch_tasks.discard)
+    return len(todo)

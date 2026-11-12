@@ -37,9 +37,38 @@ def test_roads_split_at_intersections_but_not_at_crosswalks_or_continuations():
     assert len(main_segs) == 2
     assert sorted(len(r.coords) for r in main_segs) == [3, 5]
     assert len([r for r in roads if r.label == "Cross St"]) == 2
-    assert any(r.kind == "path" for r in feats.roads)
+    assert not any(r.kind == "path" for r in feats.roads)  # paths are no longer returned at all
     assert all(r.width_m == 7.0 for r in main_segs)
     assert labels
+
+
+def test_query_requests_only_drivable_roads():
+    from app.geo.osm import QUERY
+
+    q = QUERY.format(s=0, w=0, n=1, e=1)
+    assert 'way["highway"~"^(' in q and "residential" in q and "footway" not in q
+    assert "out geom qt;" in q
+
+
+def test_persistent_cell_cache_round_trip(monkeypatch):
+    import asyncio
+
+    from app.geo import osm
+
+    calls = {"n": 0}
+
+    async def fake_query(_q):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(osm, "_query_overpass", fake_query)
+    osm._cache.clear()
+    ix, iy = 123456, 654321  # far from anything real
+    first = asyncio.run(osm.get_cell(ix, iy))
+    assert first["cell"] == [ix, iy] and calls["n"] == 1
+    osm._cache.clear()  # simulate a restart: memory gone, SQLite row remains
+    second = asyncio.run(osm.get_cell(ix, iy))
+    assert second == first and calls["n"] == 1
 
 
 def test_areas_from_ways_and_multipolygon_outer():

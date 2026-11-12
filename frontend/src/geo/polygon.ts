@@ -90,7 +90,7 @@ export interface Stroke {
 
 /** One object picked by smart select: a mapped area (ring) or a road segment (stroke). */
 export type SmartItem =
-  | { key: string; kind: "building" | "parking" | "green"; label: string; ring: LngLat[] }
+  | { key: string; kind: "building" | "parking" | "green" | "block"; label: string; ring: LngLat[] }
   | { key: string; kind: "road" | "path"; label: string; coords: LngLat[]; width_m: number };
 
 /** Minimal view of a quick selection the region layer needs (avoids a map-module import cycle). */

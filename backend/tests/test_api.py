@@ -266,6 +266,17 @@ def test_mask_edit_flow(client):
     assert r.status_code == 422 and r.json()["detail"]["code"] == "region_missing"
 
 
+def test_osm_prefetch_requires_auth_and_queues(client, monkeypatch):
+    from app.geo import osm
+
+    queued = []
+    monkeypatch.setattr(osm, "schedule_prefetch", lambda lng, lat, radius_cells=1: queued.append((lng, lat)) or 9)
+    assert client.post("/api/osm/prefetch", json={"lng": -75.1652, "lat": 39.9526}).status_code == 401
+    headers, _ = _signup(client)
+    r = client.post("/api/osm/prefetch", json={"lng": -75.1652, "lat": 39.9526}, headers=headers)
+    assert r.status_code == 200 and r.json() == {"queued": 9} and queued == [(-75.1652, 39.9526)]
+
+
 def test_create_requires_auth_and_validates(client):
     r = client.post("/api/edits", json={"polygon": POLY, "prompt": "hello"})
     assert r.status_code == 401
