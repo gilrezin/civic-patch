@@ -60,6 +60,59 @@ export function MapView() {
     locate(map, true);
   }, [map, locateRequest]);
 
+  // Keep the header's location button current: reverse-geocode the map centre after it settles,
+  // skipping lookups that stay within ~100 m of the last one.
+  useEffect(() => {
+    if (!map) return;
+    let timer: number | null = null;
+    let lastKey = "";
+    let seq = 0;
+    const lookup = () => {
+      const c = map.getCenter();
+      const key = `${c.lng.toFixed(3)},${c.lat.toFixed(3)}`;
+      if (key === lastKey) return;
+      lastKey = key;
+      const mine = ++seq;
+      api
+        .placesHere(c.lng, c.lat)
+        .then((p) => {
+          if (mine === seq) useStore.getState().setPlace(p);
+        })
+        .catch(() => {});
+    };
+    const onMoveEnd = () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(lookup, 700);
+    };
+    lookup();
+    map.on("moveend", onMoveEnd);
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      map.off("moveend", onMoveEnd);
+    };
+  }, [map]);
+
+  // Search results from the header ask the map to go somewhere.
+  const flyTo = useStore((s) => s.flyTo);
+  useEffect(() => {
+    if (!map || !flyTo) return;
+    if (flyTo.bbox) {
+      const [w, s, e, n] = flyTo.bbox;
+      const spanM = Math.max((e - w) * 111320 * Math.cos((flyTo.lat * Math.PI) / 180), (n - s) * 110540);
+      if (spanM > 150) {
+        map.fitBounds(
+          [
+            [w, s],
+            [e, n],
+          ],
+          { padding: 60, maxZoom: 17, duration: 1200 },
+        );
+        return;
+      }
+    }
+    map.flyTo({ center: [flyTo.lng, flyTo.lat], zoom: Math.max(map.getZoom(), 17), duration: 1200 });
+  }, [map, flyTo]);
+
   // Warm the smart-select cells around the signed-in user's start area, once the map has
   // settled on it (after the geolocation jump, if any). Fire-and-forget.
   const user = useStore((s) => s.user);
@@ -110,7 +163,7 @@ export function MapView() {
         [e, n],
       ],
       {
-        padding: { top: 90, bottom: 40, left: 90, right: wide ? PANEL_WIDTH + 40 : 40 },
+        padding: { top: 64 + 40, bottom: 40, left: 90, right: wide ? PANEL_WIDTH + 40 : 40 },
         maxZoom: 19,
         duration: 700,
       },

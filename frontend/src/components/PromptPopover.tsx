@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Map as MLMap } from "maplibre-gl";
+import { api } from "../api/client";
 import { submitNewEdit } from "../map/submit";
 import { useStore } from "../state/store";
 import { IconMic, IconPlus } from "./icons";
@@ -24,7 +25,7 @@ export function PromptPopover({ map }: { map: MLMap }) {
       const rect = map.getContainer().getBoundingClientRect();
       const half = Math.min(WIDTH, rect.width - 24) / 2;
       const x = Math.max(12 + half, Math.min(rect.width - 12 - half, p.x));
-      const y = Math.max(80, Math.min(rect.height - 40, p.y));
+      const y = Math.max(64 + 60, Math.min(rect.height - 40, p.y));
       setPos({ x, y });
     };
     update();
@@ -40,6 +41,14 @@ export function PromptPopover({ map }: { map: MLMap }) {
       setTimeout(() => inputRef.current?.focus(), 30);
     }
   }, [draw.mode]);
+
+  // When the prompt box opens, let the backend prepare municipality-specific guidance (it
+  // generates comprehensive-plan hints on first use). Internal only: nothing is shown here.
+  useEffect(() => {
+    if (!anchor) return;
+    api.hintsPrepare(anchor[0], anchor[1]).catch(() => {});
+    // The anchor is a fresh tuple per prompting session; keying on its coordinates avoids repeat calls on re-render.
+  }, [anchor?.[0], anchor?.[1]]);
 
   if (draw.mode !== "prompting" || !pos) return null;
 

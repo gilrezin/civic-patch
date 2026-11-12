@@ -1,5 +1,6 @@
 import { useStore } from "../state/store";
 import { IconBookmark, IconLayers } from "./icons";
+import { LocationMenu } from "./LocationMenu";
 
 export function Header() {
   const user = useStore((s) => s.user);
@@ -25,6 +26,7 @@ export function Header() {
           <div className="header-title">civic-patch</div>
           <div className="header-tagline">Reimagine your city, one patch at a time</div>
         </div>
+        <LocationMenu />
       </div>
 
       <div className="header-actions">

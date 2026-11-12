@@ -45,8 +45,16 @@ Environment variables (see `backend/example.env`):
 | `JWT_SECRET` | insecure default | Secret for signing login tokens; set a long random string |
 | `DATA_DIR` | `./data` | Where the SQLite database and generated images live |
 | `PROMPT_HINTS_FILE` | `prompt_hints.json` | Keyword to extra-instruction mapping sent to Gemini (see below) |
+| `PLANS_DIR` | `../references` | Folder of per-municipality comprehensive plans used to generate city-specific hints |
+| `GEMINI_TEXT_MODEL` / `GEMINI_EMBED_MODEL` | `gemini-2.5-flash` / `gemini-embedding-001` | Models used to generate plan hints |
 | `OVERPASS_URLS` / `OVERPASS_TIMEOUT_S` | fr, mail.ru, de, kumi, coffee / `15` | Overpass mirrors for smart select, tried in order |
 | `MAX_BBOX_KM2` / `MIN_POLY_M2` | `1.0` / `20` | Selection size guardrails |
+
+### Comprehensive-plan guidance (per municipality)
+
+Drop a municipality's comprehensive plan into a folder named after it under `PLANS_DIR` (default `references/`), for example `references/Philadelphia-PA/Phila2035 Summary_March 2012.pdf`. The folder name is the municipality slug: the city name and the state or region code as Nominatim reports them, joined with hyphens.
+
+When a signed-in user opens the suggestion box over an area, the backend reverse-geocodes the selection, and if that municipality has a plan folder but no generated hints yet, it starts a one-off background job: the documents are extracted (PDF, TXT or MD), chunked, embedded with `GEMINI_EMBED_MODEL`, the best chunks for fourteen planning themes are retrieved, and `GEMINI_TEXT_MODEL` writes a keyword-to-guidance JSON in the same format as `prompt_hints.json`. The result is saved to `DATA_DIR/plan_hints/<Municipality>.json` and is used instead of the default file for every edit and refinement in that municipality. This is invisible to users; the backend log records when generation starts, which source each edit used, and any failures. A generation that is still running when the user submits is awaited for up to a minute. Municipalities without a plan folder fall back to `prompt_hints.json`. Delete the generated file to regenerate it; the chunk index is cached under `DATA_DIR/plan_index/` and reused unless the documents change.
 
 ### Prompt hints
 
@@ -91,6 +99,8 @@ If the site suddenly reports "Not Found" or "Method Not Allowed" for routes that
 For a production build: `npm run build` (output in `frontend/dist/`).
 
 ## Using the site
+
+The header shows the city and neighbourhood at the centre of the map and updates as you pan. Click it for a dropdown with the municipality's comprehensive plan (click to download the PDF when one is on file) and a search box for jumping to any place, address or city.
 
 1. Create an account (email + password; your display name is public).
 2. Pick an area in one of two ways:

@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # JSON file mapping prompt keywords to extra Gemini instructions (see backend/prompt_hints.json)
     prompt_hints_file: Path = BACKEND_DIR / "prompt_hints.json"
 
+    # Comprehensive plans: one sub-folder per municipality named like "Philadelphia-PA" holding
+    # PDF/TXT/MD documents. A hints JSON is generated from them (RAG) into DATA_DIR/plan_hints/.
+    plans_dir: Path = BACKEND_DIR.parent / "references"
+    gemini_text_model: str = "gemini-2.5-flash"
+    gemini_embed_model: str = "gemini-embedding-001"
+
     # Overpass API mirrors for smart select, tried in order with failover (comma-separated).
     # Benchmarked 2026-11-06 from Philadelphia with one 0.01 deg cell query:
     #   overpass.openstreetmap.fr 2.5 s cold / 1.6 s warm; maps.mail.ru 24 s;
@@ -79,6 +85,19 @@ class Settings(BaseSettings):
     def resolved_prompt_hints_file(self) -> Path:
         p = self.prompt_hints_file
         return p if p.is_absolute() else BACKEND_DIR / p
+
+    @property
+    def resolved_plans_dir(self) -> Path:
+        p = self.plans_dir
+        return p if p.is_absolute() else BACKEND_DIR / p
+
+    @property
+    def plan_hints_dir(self) -> Path:
+        return self.resolved_data_dir / "plan_hints"
+
+    @property
+    def plan_index_dir(self) -> Path:
+        return self.resolved_data_dir / "plan_index"
 
 
 @lru_cache

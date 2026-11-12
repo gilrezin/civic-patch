@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Polygon } from "geojson";
 import { api, setAuthToken } from "../api/client";
-import type { EditOut, UserOut } from "../api/types";
+import type { EditOut, PlaceHere, UserOut } from "../api/types";
 import type { LngLat, MaskSelection, Region, SmartItem, Stroke } from "../geo/polygon";
 
 export type Tool = "pan" | "draw" | "highlight" | "smart";
@@ -63,6 +63,8 @@ interface State {
   locateRequest: number;
   fitRequest: { editId: number; nonce: number } | null;
   drawer: Drawer;
+  place: PlaceHere | null; // where the map centre currently is
+  flyTo: { lng: number; lat: number; bbox?: [number, number, number, number]; nonce: number } | null;
 
   toasts: Toast[];
 
@@ -91,6 +93,8 @@ interface State {
   setHighlightWidthPx: (px: number) => void;
   requestLocate: () => void;
   setDrawer: (drawer: Drawer) => void;
+  setPlace: (place: PlaceHere | null) => void;
+  requestFlyTo: (target: { lng: number; lat: number; bbox?: [number, number, number, number] }) => void;
 
   pushToast: (kind: Toast["kind"], message: string) => void;
   dismissToast: (id: number) => void;
@@ -120,6 +124,8 @@ export const useStore = create<State>((set, get) => ({
   locateRequest: 0,
   fitRequest: null,
   drawer: null,
+  place: null,
+  flyTo: null,
 
   toasts: [],
 
@@ -200,6 +206,8 @@ export const useStore = create<State>((set, get) => ({
       fitRequest: id !== null && fit ? { editId: id, nonce: Date.now() } : null,
     }),
   setDrawer: (drawer) => set({ drawer }),
+  setPlace: (place) => set({ place }),
+  requestFlyTo: (target) => set({ flyTo: { ...target, nonce: Date.now() } }),
   setHovered: (id) => set({ hoveredId: id }),
   setViewOriginal: (id) => set({ viewOriginalId: id }),
   setPreviewVersion: (p) => set({ previewVersionUrl: p }),

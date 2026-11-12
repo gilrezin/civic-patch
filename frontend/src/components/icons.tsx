@@ -174,6 +174,20 @@ export const IconLayers = (p: P) => (
   </svg>
 );
 
+export const IconSearch = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.5-3.5" />
+  </svg>
+);
+
+export const IconFile = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5M9 13h6M9 17h6" />
+  </svg>
+);
+
 export const IconClose = (p: P) => (
   <svg {...base} {...p}>
     <path d="M6 6l12 12M18 6L6 18" />

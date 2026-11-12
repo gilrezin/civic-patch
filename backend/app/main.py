@@ -17,7 +17,7 @@ from .config import get_settings
 from .db import Base, SessionLocal, engine, run_migrations
 from .geo import osm as osm_geo
 from .geo.tiles import ATTRIBUTION, close_client
-from .routers import auth, comments, edits, me, osm, votes
+from .routers import auth, comments, edits, hints, me, osm, places, votes
 from .services.edits import backfill_place_names, cleanup_stale_pending
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
             content={"detail": {"code": "invalid_request", "message": f"{loc}: {first.get('msg', 'invalid')}"}},
         )
 
-    for r in (auth.router, edits.router, votes.router, comments.router, me.router, osm.router):
+    for r in (auth.router, edits.router, votes.router, comments.router, me.router, osm.router, hints.router, places.router):
         app.include_router(r, prefix="/api")
 
     @app.get("/api/health")

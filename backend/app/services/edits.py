@@ -13,12 +13,13 @@ from sqlalchemy.orm import Session
 
 from ..ai.base import EditorError
 from ..ai.hints import hints_for
+from ..ai.plans import hints_path_for, wait_for_plan_hints
 from ..ai.prompts import create_prompt, refine_prompt
 from ..ai.registry import get_editor
 from ..config import get_settings
 from ..geo.crop import build_crop, rings_in_crop, strokes_in_crop
 from ..geo.mercator import px_to_lnglat
-from ..geo.places import reverse_geocode
+from ..geo.places import reverse_geocode, reverse_geocode_full
 from ..geo.validate import (
     ValidationError,
     check_polygon_size,
@@ -378,7 +379,7 @@ async def create_edit(
     polygon_json = json.dumps({"type": "Polygon", "coordinates": [closed]})
     c_lng, c_lat = polygon_centroid(polygon_json)
     try:
-        crop, place_name = await asyncio.gather(
+        crop, place = await asyncio.gather(
             build_crop(
                 ring,
                 min_zoom=settings.min_zoom,
@@ -386,8 +387,9 @@ async def create_edit(
                 target_min_px=settings.target_min_px,
                 margin=settings.context_margin,
             ),
-            reverse_geocode(c_lng, c_lat),
+            reverse_geocode_full(c_lng, c_lat),
         )
+        place_name, municipality = place.place_name, place.municipality
     except Exception as exc:
         _limiter.refund(user.id)
         log.exception("tile stitching failed")
@@ -426,6 +428,7 @@ async def create_edit(
         region_json=region_json,
         polygon_geojson=polygon_json,
         place_name=place_name,
+        municipality=municipality,
         bounds_w=w,
         bounds_s=s,
         bounds_e=e,
@@ -479,9 +482,12 @@ async def create_edit(
     await store.save_png(mask, edit.mask_path)
 
     try:
-        hints = hints_for(prompt)
+        # If this municipality's plan hints are still being generated, give them a moment.
+        await wait_for_plan_hints(municipality, timeout_s=60.0)
+        hints_file = hints_path_for(municipality)
+        hints = hints_for(prompt, hints_file)
         if hints:
-            log.info("edit %d: %d prompt hint(s) matched", edit.id, len(hints))
+            log.info("edit %d: %d prompt hint(s) matched from %s", edit.id, len(hints), hints_file.name)
         await _generate_version(
             db, edit, version, base=crop.image, mask=mask, prompt_text=create_prompt(prompt, settings.region_hint, hints)
         )
@@ -527,7 +533,8 @@ async def refine_edit(db: Session, user: User, edit: Edit, prompt: str) -> Edit:
     base = await store.load_image(base_version.full_path)
     mask = await store.load_image(edit.mask_path)
     history = [v.prompt for v in sorted(edit.versions, key=lambda v: v.version_number) if v.status == "done"]
-    hints = hints_for(prompt)
+    await wait_for_plan_hints(edit.municipality, timeout_s=60.0)
+    hints = hints_for(prompt, hints_path_for(edit.municipality))
     try:
         await _generate_version(
             db,

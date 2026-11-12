@@ -128,6 +128,38 @@ export interface VoteOut {
   my_vote: -1 | 0 | 1;
 }
 
+export interface HintsPrepareOut {
+  municipality: string | null;
+  place_name: string | null;
+  status: "ready" | "generating" | "available" | "failed" | "none";
+  source: "plan" | "default";
+  error?: string | null;
+}
+
+export interface PlanRef {
+  exists: boolean;
+  municipality: string | null;
+  filename: string | null;
+  url: string | null;
+  hints_status: string | null;
+}
+
+export interface PlaceHere {
+  city: string | null;
+  neighbourhood: string | null;
+  region: string | null;
+  place_name: string | null;
+  municipality: string | null;
+  plan: PlanRef;
+}
+
+export interface SearchHit {
+  name: string;
+  lng: number;
+  lat: number;
+  bbox: [number, number, number, number];
+}
+
 export interface AuthOut {
   token: string;
   user: UserOut;

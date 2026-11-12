@@ -45,12 +45,17 @@ def stub_tiles(request, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def stub_geocode(monkeypatch):
+    from app.geo.places import PlaceInfo
     from app.services import edits as svc
 
     async def fake_reverse_geocode(lng, lat):
         return "Center City, Philadelphia"
 
+    async def fake_full(lng, lat):
+        return PlaceInfo("Center City, Philadelphia", "Testville-TS")
+
     monkeypatch.setattr(svc, "reverse_geocode", fake_reverse_geocode)
+    monkeypatch.setattr(svc, "reverse_geocode_full", fake_full)
     yield
 
 

@@ -96,6 +96,7 @@ class Edit(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
     error: Mapped[str | None] = mapped_column(String(255), nullable=True)
     place_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    municipality: Mapped[str | None] = mapped_column(String(80), nullable=True)  # e.g. "Philadelphia-PA"
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

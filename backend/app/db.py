@@ -39,6 +39,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "edits": {
         "place_name": "VARCHAR(160)",
+        "municipality": "VARCHAR(80)",
         "kind": "VARCHAR(16) NOT NULL DEFAULT 'polygon'",
         "region_json": "TEXT",
     },
