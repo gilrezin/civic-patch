@@ -39,6 +39,25 @@ Return the edited image."""
 
 NUDGE = "\nYou must return the edited image as an image, not a description."
 
+STREETVIEW_TEMPLATE = """You are editing a 360-degree equirectangular street-level panorama for an urban-planning visualization.
+Image 1 is the panorama to edit. Image 2 is a straight-down satellite photo of the same place BEFORE a proposed change. Image 3 is the same satellite photo AFTER the change. The only thing you may change in Image 1 is what differs between Image 2 and Image 3, rendered as it would look from eye level.
+The panorama was captured about {distance_m} m from the site{place}. The site lies straight ahead at the horizontal centre of Image 1.
+Changes proposed for the site, in order:
+{history}
+Hard rules:
+1. Return the same equirectangular 360 panorama: identical projection, framing, horizon height, field of view and image size. Do not crop, rotate, zoom, re-centre, or turn it into a normal photograph.
+2. The left and right edges wrap around to meet each other and must stay continuous.
+3. Everything not implied by the satellite before/after pair stays identical: buildings, sky, weather, lighting, season, road markings, parked cars, people and signs.
+4. Do not add text, labels, arrows, borders or watermarks.
+5. Only built-environment changes are allowed (streets, lanes, sidewalks, plazas, parks, trees, buildings, housing, parking, transit, water features, public space). If the change is not visible from this viewpoint, return the panorama unchanged.
+Return the edited panorama as an image."""
+
+
+def streetview_prompt(history: list[str], place_name: str | None, distance_m: float) -> str:
+    lines = "\n".join(f"{i + 1}. {h}" for i, h in enumerate(history[-5:])) or "(none)"
+    place = f" in {place_name}" if place_name else ""
+    return STREETVIEW_TEMPLATE.format(distance_m=max(1, int(round(distance_m))), place=place, history=lines)
+
 
 def region_hint(mode: str) -> str:
     return REGION_HINT_MASK if mode == "mask" else REGION_HINT_TEXT

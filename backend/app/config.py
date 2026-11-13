@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     editor: Literal["gemini", "fake"] = "gemini"
     region_hint: Literal["mask", "text"] = "mask"
 
+    # Street view: Google Street View Static API key (metadata + six cube faces per panorama),
+    # the Gemini model that re-renders the panorama ("" = gemini_image_model), and stitch sizing.
+    google_street_view_api_key: str = ""
+    gemini_streetview_model: str = ""
+    streetview_max_radius_m: int = 400
+    streetview_face_px: int = 640
+    streetview_face_fov: int = 90
+    streetview_pano_width: int = 2048  # height is always width // 2
+
     jwt_secret: str = "dev-only-insecure-secret"
     jwt_expiry_days: int = 30
 

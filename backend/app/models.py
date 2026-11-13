@@ -139,6 +139,39 @@ class EditVersion(Base):
     creator: Mapped[User] = relationship("User", lazy="joined")
 
 
+class StreetView(Base):
+    """A Street View panorama near an edit, re-rendered by Gemini for one EditVersion.
+
+    Files live in the edit's asset folder as sv{n}_original.png / sv{n}_edited.png, so deleting
+    the edit's folder removes them and the FK cascade removes the row.
+    """
+
+    __tablename__ = "street_views"
+    __table_args__ = (
+        UniqueConstraint("edit_id", "version_id", name="uq_streetview_edit_version"),
+        CheckConstraint("status IN ('pending','done','failed')", name="ck_streetview_status"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    edit_id: Mapped[int] = mapped_column(ForeignKey("edits.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("edit_versions.id", ondelete="CASCADE"), nullable=False)
+    pano_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    pano_lat: Mapped[float] = mapped_column(Float, nullable=False)
+    pano_lng: Mapped[float] = mapped_column(Float, nullable=False)
+    pano_date: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    heading_deg: Mapped[float] = mapped_column(Float, nullable=False)  # bearing pano -> site; centre of the image
+    distance_m: Mapped[float] = mapped_column(Float, nullable=False)
+    original_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    edited_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, nullable=False)
+
+    version: Mapped[EditVersion] = relationship("EditVersion", lazy="joined")
+
+
 class Vote(Base):
     __tablename__ = "votes"
     __table_args__ = (CheckConstraint("value IN (-1, 1)", name="ck_vote_value"),)

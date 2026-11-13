@@ -40,6 +40,9 @@ Environment variables (see `backend/example.env`):
 |---|---|---|
 | `GEMINI_API_KEY` | (required) | Google Gemini API key |
 | `GEMINI_IMAGE_MODEL` | `gemini-2.5-flash-image` | Image editing model id |
+| `GOOGLE_STREET_VIEW_API_KEY` | (optional) | Google Maps Platform key with the Street View Static API enabled; powers the **View** button |
+| `GEMINI_STREETVIEW_MODEL` | `GEMINI_IMAGE_MODEL` | Model that re-renders the street-level panorama (`gemini-3-pro-image-preview` follows the references best) |
+| `STREETVIEW_MAX_RADIUS_M` / `STREETVIEW_FACE_PX` / `STREETVIEW_PANO_WIDTH` | `400` / `640` / `2048` | Search radius for a panorama, per-face download size, stitched panorama width |
 | `EDITOR` | `gemini` | `fake` runs without any API calls (tints the crop) for offline development |
 | `REGION_HINT` | `mask` | `mask` sends the polygon mask as a second image; `text` describes the region in words |
 | `JWT_SECRET` | insecure default | Secret for signing login tokens; set a long random string |
@@ -109,6 +112,7 @@ The header shows the city and neighbourhood at the centre of the map and updates
    - **Smart select** (toolbar or `S`): click a building, parking lot or park to select exactly that object. Click any open ground and the selection grows outward until it meets the surrounding roads, so one click selects a whole block or lot. Roads themselves cannot be selected; they act as boundaries. The search for bounding roads stops at a fixed distance (220 m, a constant in the code), and a block that reaches that limit is cut off there. Drag across several objects to collect them all; click a selected object again to remove it. Works at zoom 17 and closer. Press Enter (or **Done selecting**) to finish, Backspace to undo, Esc to cancel.
 3. Type how the area should change and press Enter. Generation takes roughly 10 to 40 seconds; a dashed outline and spinner mark the area meanwhile.
 4. Hover any edited area to see its outline; click it or its pin to open the post: votes, the prompt, edit history, **Refine proposal**, **View original**, comments and a share link.
+   - **View** (next to the edit history) opens the proposal from street level. The first time, a signed-in user clicks **Generate street view**; the server finds the nearest Street View panorama, stitches a full 360°, and asks Gemini to apply the same change to it. The result is a photo sphere you can drag around, zoom and view full screen, with a **Before / After** switch to compare with the real street. It is generated once per version of the proposal and shared with everyone; after a refinement the pop-up offers to regenerate.
 5. Other users' edits, votes and comments appear automatically within about 15 seconds.
 6. **My Edits** (header) lists everything you generated: your own suggestions and refinements you made to other people's, each labelled with its neighbourhood and city. Click an entry to jump to it.
 7. The **bookmark** icon on a post saves it to your private **Saved** list in the header.
@@ -133,6 +137,12 @@ The browser fetches the same Esri tiles the map shows, at an integer zoom betwee
 - A feathered alpha mask limits the overlay to the polygon interior. The map draws it as a raster image source above the basemap, so the original imagery inside the polygon is hidden.
 - Refinements send the previous unmasked result back to Gemini with the new instruction, creating a new version in the edit's history.
 
+### How the street view works
+
+Google's Street View Static API only returns single flat views (at most 640×640 px, 120° field of view), never a whole sphere. For the **View** button the backend therefore looks up the nearest outdoor panorama to the edit's centroid (free metadata call, searching outward to `STREETVIEW_MAX_RADIUS_M`), downloads six 90° cube faces of it (four around the horizon, one up, one down; six billable requests, roughly four cents), and reprojects them with numpy into a 2048×1024 equirectangular image whose centre column faces the edit, so the viewer opens looking at the site and the wrap seam sits behind you. Gemini then receives that panorama together with the original satellite crop and the edited version as before/after references, and is asked to render the same change from eye level without altering anything else. Gemini has no 2:1 output ratio, so the panorama is padded to 16:9 with repeated zenith and nadir rows, edited, resized back and cropped. The stitched original and the edited panorama are saved beside the edit's other images (`sv<version>_original.png`, `sv<version>_edited.png`) and served by the pop-up through [Photo Sphere Viewer](https://photo-sphere-viewer.js.org/), which is loaded on demand so the main bundle stays small. A `live` test (`tests/test_live_streetview.py`) stitches a real Market Street panorama into `backend/tests/output/` for inspection.
+
 ## Attribution and terms
 
 Basemap imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community. Place names and smart-select outlines © OpenStreetMap contributors (ODbL), via Nominatim and the Overpass API. This prototype uses Esri's public World Imagery tile service without an API key; production use requires an ArcGIS Location Platform account and must follow Esri's terms of use. Generated patches are AI-modified derivatives for visualization only.
+
+Street-level panoramas: imagery © Google, shown with attribution in the viewer. The Google Maps Platform terms allow caching panorama ids but restrict storing Street View imagery and derivatives; this prototype keeps the stitched and AI-edited panoramas on disk so each one is paid for once, which must be reviewed against the current terms before any public deployment.

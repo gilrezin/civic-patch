@@ -57,6 +57,17 @@ class EditorTimeout(EditorError):
 class ImageEditor(Protocol):
     async def edit(self, base: Image.Image, mask: Image.Image | None, prompt: str, aspect_name: str) -> Image.Image: ...
 
+    async def edit_panorama(self, pano: Image.Image, refs: list[Image.Image], prompt: str) -> Image.Image:
+        """Edit an equirectangular panorama using `refs` as reference images; result is pano.size."""
+        ...
+
+
+def stretch_to(img: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """Plain resize to the exact size, never cropping (for panoramas, where a crop breaks the sphere)."""
+    if img.size != size:
+        img = img.resize(size, Image.LANCZOS)
+    return img.convert("RGB")
+
 
 def fit_to(img: Image.Image, size: tuple[int, int]) -> Image.Image:
     """Center-crop to the expected aspect if it drifted by >5%, then resize to the exact size."""

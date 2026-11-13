@@ -12,6 +12,7 @@ import type {
   PlaceHere,
   SearchHit,
   SmartOut,
+  StreetViewOut,
   UserOut,
   VersionOut,
   VoteOut,
@@ -95,6 +96,9 @@ export const api = {
   refineEdit: (id: number, prompt: string) =>
     request<EditOut>("POST", `/edits/${id}/refine`, { prompt }, { timeoutMs: GENERATION_TIMEOUT_MS }),
   listVersions: (id: number) => request<VersionOut[]>("GET", `/edits/${id}/versions`),
+  getStreetView: (id: number) => request<StreetViewOut>("GET", `/edits/${id}/street-view`),
+  generateStreetView: (id: number) =>
+    request<StreetViewOut>("POST", `/edits/${id}/street-view`, undefined, { timeoutMs: GENERATION_TIMEOUT_MS }),
 
   deleteEdit: (id: number) => request<void>("DELETE", `/edits/${id}`),
   bookmark: (id: number, saved: boolean) => request<{ saved: boolean }>("PUT", `/edits/${id}/bookmark`, { saved }),

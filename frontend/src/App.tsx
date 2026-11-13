@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { AuthModal } from "./components/AuthModal";
 import { EditPanel } from "./components/EditPanel";
 import { Header } from "./components/Header";
@@ -8,10 +8,14 @@ import { usePolling } from "./hooks/usePolling";
 import { MapView } from "./map/MapView";
 import { useStore } from "./state/store";
 
+// The 360 viewer bundles three.js; keep it out of the main bundle until someone clicks View.
+const StreetViewModal = lazy(() => import("./components/StreetViewModal"));
+
 export default function App() {
   const restoreSession = useStore((s) => s.restoreSession);
   const editsVersion = useStore((s) => s.editsVersion);
   const drawer = useStore((s) => s.drawer);
+  const streetViewOpen = useStore((s) => s.streetViewEditId !== null);
 
   useEffect(() => {
     void restoreSession();
@@ -37,6 +41,11 @@ export default function App() {
         <MapView />
         {drawer ? <ListDrawer /> : <EditPanel />}
       </main>
+      {streetViewOpen && (
+        <Suspense fallback={null}>
+          <StreetViewModal />
+        </Suspense>
+      )}
       <AuthModal />
       <Toasts />
     </div>

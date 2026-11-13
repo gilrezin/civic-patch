@@ -119,6 +119,25 @@ class ContributionOut(BaseModel):
     score: int
 
 
+class StreetViewOut(BaseModel):
+    """A Gemini-edited Street View panorama for one version of an edit."""
+
+    id: int
+    edit_id: int
+    version_id: int
+    version_number: int
+    pano_id: str
+    lat: float
+    lng: float
+    heading: float  # compass bearing at the centre column of the panorama (toward the site)
+    distance_m: float
+    pano_date: str | None = None
+    original_url: str
+    edited_url: str
+    status: str
+    created_at: datetime
+
+
 class BookmarkIn(BaseModel):
     saved: bool
 

@@ -1235,6 +1235,154 @@ button {
   margin: 14px 0;
 }
 
+/* Street view --------------------------------------------------------- */
+
+.sv-modal {
+  width: min(1100px, 100vw - 32px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px 14px;
+}
+
+.sv-head {
+  padding-right: 36px;
+  min-width: 0;
+}
+
+.sv-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.sv-sub {
+  font-size: 13px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sv-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  max-height: calc(100vh - 230px);
+  min-height: 220px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0b1020;
+}
+
+.sv-viewer {
+  position: absolute;
+  inset: 0;
+}
+
+/* Photo Sphere Viewer declares its theme variables on .psv-container, so override them there. */
+.sv-viewer .psv-container {
+  --psv-canvas-background: #0b1020;
+  --psv-loader-bg-color: rgba(15, 23, 42, 0.85);
+  --psv-loader-color: #ffffff;
+  --psv-loader-tick-color: var(--accent);
+  --psv-navbar-background: rgba(15, 23, 42, 0.55);
+}
+
+.sv-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  color: var(--white);
+  font-weight: 600;
+  text-align: center;
+}
+
+.sv-status .edit-spinner-ring {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+}
+
+.sv-status.is-error {
+  color: #fecaca;
+}
+
+.sv-status-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.sv-cta p {
+  max-width: 440px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.sv-stale {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--glass-dark);
+  color: var(--white);
+  font-size: 13px;
+  z-index: 2;
+}
+
+.sv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sv-toggle {
+  margin-right: 0;
+  min-width: 200px;
+}
+
+.sv-toggle button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sv-meta {
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .sv-modal {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    padding: 14px;
+  }
+
+  .sv-stage {
+    aspect-ratio: auto;
+    flex: 1;
+    max-height: none;
+  }
+}
+
 .form {
   display: flex;
   flex-direction: column;

@@ -18,6 +18,20 @@ class FakeEditor:
         await asyncio.sleep(self.delay_s)
         if "out of scope" in prompt.lower():
             raise OutOfScope("OUT_OF_SCOPE")
+        return self._tint(base, prompt)
+
+    async def edit_panorama(self, pano: Image.Image, refs: list[Image.Image], prompt: str) -> Image.Image:
+        await asyncio.sleep(self.delay_s)
+        if "out of scope" in prompt.lower():
+            raise OutOfScope("OUT_OF_SCOPE")
+        out = self._tint(pano, prompt)
+        # Frame the centre of the panorama, which is where the edited site faces.
+        w, h = out.size
+        ImageDraw.Draw(out).rectangle([w * 0.4, h * 0.35, w * 0.6, h * 0.65], outline=(255, 255, 255), width=3)
+        return out
+
+    @staticmethod
+    def _tint(base: Image.Image, prompt: str) -> Image.Image:
         seed = int(hashlib.sha1(prompt.encode()).hexdigest()[:6], 16)
         hue = seed % 3
         rgb = base.convert("RGB")

@@ -63,6 +63,7 @@ interface State {
   locateRequest: number;
   fitRequest: { editId: number; nonce: number } | null;
   drawer: Drawer;
+  streetViewEditId: number | null; // edit whose street-view pop-up is open
   place: PlaceHere | null; // where the map centre currently is
   flyTo: { lng: number; lat: number; bbox?: [number, number, number, number]; nonce: number } | null;
 
@@ -93,6 +94,7 @@ interface State {
   setHighlightWidthPx: (px: number) => void;
   requestLocate: () => void;
   setDrawer: (drawer: Drawer) => void;
+  openStreetView: (id: number | null) => void;
   setPlace: (place: PlaceHere | null) => void;
   requestFlyTo: (target: { lng: number; lat: number; bbox?: [number, number, number, number] }) => void;
 
@@ -124,6 +126,7 @@ export const useStore = create<State>((set, get) => ({
   locateRequest: 0,
   fitRequest: null,
   drawer: null,
+  streetViewEditId: null,
   place: null,
   flyTo: null,
 
@@ -178,6 +181,7 @@ export const useStore = create<State>((set, get) => ({
       patch.previewVersionUrl = null;
       patch.fitRequest = null;
     }
+    if (get().streetViewEditId === id) patch.streetViewEditId = null;
     set(patch);
   },
   addTempEdit: (t) => {
@@ -206,6 +210,7 @@ export const useStore = create<State>((set, get) => ({
       fitRequest: id !== null && fit ? { editId: id, nonce: Date.now() } : null,
     }),
   setDrawer: (drawer) => set({ drawer }),
+  openStreetView: (id) => set({ streetViewEditId: id }),
   setPlace: (place) => set({ place }),
   requestFlyTo: (target) => set({ flyTo: { ...target, nonce: Date.now() } }),
   setHovered: (id) => set({ hoveredId: id }),

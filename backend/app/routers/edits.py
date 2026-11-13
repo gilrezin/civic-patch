@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, get_optional_user
 from ..db import get_db
 from ..models import User
-from ..schemas import BookmarkIn, BookmarkOut, EditCreateIn, EditOut, RefineIn, VersionOut
+from ..schemas import BookmarkIn, BookmarkOut, EditCreateIn, EditOut, RefineIn, StreetViewOut, VersionOut
 from ..services import edits as svc
+from ..services import streetview as sv
 
 router = APIRouter(prefix="/edits", tags=["edits"])
 
@@ -57,6 +58,24 @@ async def refine_edit(
 def list_versions(edit_id: int, db: Session = Depends(get_db)) -> list[VersionOut]:
     edit = svc.get_edit_or_404(db, edit_id)
     return [svc.version_out(v) for v in sorted(edit.versions, key=lambda v: v.version_number)]
+
+
+@router.get("/{edit_id}/street-view", response_model=StreetViewOut)
+def get_street_view(edit_id: int, db: Session = Depends(get_db)) -> StreetViewOut:
+    """Newest finished street view for this edit (may predate the current version)."""
+    edit = svc.get_edit_or_404(db, edit_id)
+    row = sv.latest_done(db, edit)
+    if row is None:
+        raise svc.http_error(404, "not_generated", "No street view has been generated for this suggestion yet.")
+    return sv.street_view_out(row)
+
+
+@router.post("/{edit_id}/street-view", response_model=StreetViewOut)
+async def generate_street_view(
+    edit_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> StreetViewOut:
+    edit = svc.get_edit_or_404(db, edit_id)
+    return sv.street_view_out(await sv.generate_street_view(db, user, edit))
 
 
 @router.delete("/{edit_id}", status_code=204, response_class=Response)

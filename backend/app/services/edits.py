@@ -33,7 +33,7 @@ from ..geo.validate import (
 from ..imaging import store
 from ..imaging.contour import trace_outlines
 from ..imaging.mask import make_overlay, polygon_mask, raster_mask, region_mask, strokes_mask
-from ..models import Bookmark, Comment, Edit, EditVersion, User, Vote
+from ..models import Bookmark, Comment, Edit, EditVersion, StreetView, User, Vote
 from ..schemas import ContributionOut, EditOut, HighlightIn, MaskIn, MaskOut, SmartIn, UserOut, VersionOut
 from .ratelimit import RateLimiter
 
@@ -590,6 +590,12 @@ def cleanup_stale_pending(db: Session, older_than_minutes: int = 5) -> int:
         created = e.created_at if e.created_at.tzinfo else e.created_at.replace(tzinfo=timezone.utc)
         if created < cutoff:
             e.status = "done" if current_version(e) else "failed"
+            count += 1
+    for s in db.execute(select(StreetView).where(StreetView.status == "pending")).scalars():
+        created = s.created_at if s.created_at.tzinfo else s.created_at.replace(tzinfo=timezone.utc)
+        if created < cutoff:
+            s.status = "failed"
+            s.error = "interrupted"
             count += 1
     db.commit()
     return count

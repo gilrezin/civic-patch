@@ -98,6 +98,25 @@ export interface EditOut {
   saved: boolean;
 }
 
+/** A Gemini-edited Street View panorama rendered for one version of an edit. */
+export interface StreetViewOut {
+  id: number;
+  edit_id: number;
+  version_id: number;
+  version_number: number;
+  pano_id: string;
+  lat: number;
+  lng: number;
+  /** Compass bearing at the centre column of the panorama (toward the site). */
+  heading: number;
+  distance_m: number;
+  pano_date: string | null;
+  original_url: string;
+  edited_url: string;
+  status: "pending" | "done" | "failed";
+  created_at: string;
+}
+
 export interface ContributionOut {
   version_id: number;
   edit_id: number;

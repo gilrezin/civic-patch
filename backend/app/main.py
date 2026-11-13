@@ -16,6 +16,7 @@ import asyncio
 from .config import get_settings
 from .db import Base, SessionLocal, engine, run_migrations
 from .geo import osm as osm_geo
+from .geo import streetview as streetview_geo
 from .geo.tiles import ATTRIBUTION, close_client
 from .routers import auth, comments, edits, hints, me, osm, places, votes
 from .services.edits import backfill_place_names, cleanup_stale_pending
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
     backfill_task.cancel()
     await close_client()
     await osm_geo.close_client()
+    await streetview_geo.close_client()
 
 
 def create_app() -> FastAPI:

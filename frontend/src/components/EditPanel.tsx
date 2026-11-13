@@ -12,6 +12,7 @@ import {
   IconClose,
   IconComment,
   IconEdit,
+  IconEye,
   IconMapPin,
   IconShare,
   IconTrash,
@@ -139,7 +140,18 @@ export function EditPanel() {
             <button type="button" className="chip chip-link" onClick={() => setShowHistory((v) => !v)}>
               {others > 0 ? `+ ${others} other edit${others === 1 ? "" : "s"}` : "Edit history"} <IconArrowRight width={16} height={16} />
             </button>
-            <span className="chip chip-tag">{edit.status === "pending" ? "GENERATING" : "COMMUNITY EDIT"}</span>
+            {edit.status === "pending" ? (
+              <span className="chip chip-tag">GENERATING</span>
+            ) : (
+              <button
+                type="button"
+                className="chip chip-link"
+                title="See this proposal from street level"
+                onClick={() => useStore.getState().openStreetView(edit.id)}
+              >
+                <IconEye width={16} height={16} /> View
+              </button>
+            )}
           </div>
         </div>
         <VoteButtons edit={edit} />
